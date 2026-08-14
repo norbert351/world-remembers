@@ -1,6 +1,6 @@
 // Local world state for Phase A. The provider interface lets Phase C swap in
 // the HTTPS API without touching scene code.
-import { STAGE_THRESHOLDS } from './config'
+import { stageIndexFor } from '../shared/world-state'
 
 export interface WorldStateProvider {
   load(): Promise<number>
@@ -27,13 +27,9 @@ export const worldState = {
   lastContributionAt: 0
 }
 
-export function stageFor(count: number): number {
-  let stage = 0
-  for (let i = 0; i < STAGE_THRESHOLDS.length; i++) {
-    if (count >= STAGE_THRESHOLDS[i]) stage = i
-  }
-  return stage
-}
+// Scene-side stage helper: contribution count -> stage index.
+// The canonical stage logic lives in shared/world-state.ts.
+export const stageFor = stageIndexFor
 
 export async function loadWorldState(): Promise<void> {
   const saved = await worldState.provider.load()

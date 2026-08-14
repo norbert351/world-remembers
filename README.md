@@ -11,9 +11,9 @@ warms from dusk toward golden day as the tree progresses:
 
 | Stage | Contributions | Mood |
 |---|---|---|
-| DORMANT | 0–99 | Dusk, dim ember heart, 4 base flowers |
-| AWAKENED | 100–249 | Sunset glow, 8 flowers, first motes |
-| GROWING | 250–499 | Golden hour, 12 flowers, 6 motes |
+| DORMANT | 0-99 | Dusk, dim ember heart, 4 base flowers |
+| AWAKENED | 100-249 | Sunset glow, 8 flowers, first motes |
+| GROWING | 250-499 | Golden hour, 12 flowers, 6 motes |
 | FLOURISHING | 500+ | Bright warm day, 16 flowers, 10 motes |
 
 One Memory Tree model. Growth is visual state only: emissive heart, floating
@@ -74,3 +74,86 @@ models without use `visibleMeshesCollisionMask: 3` (interactive) or 0
   bounds, preview server serving.
 - Phase A persistence is mock only. Phase B adds the Express + Postgres API,
   Phase C connects the scene to it.
+
+---
+
+## Backend (Phase B)
+
+A tiny Express + PostgreSQL API. The database is the source of truth for
+contributions. Tree stage is derived from the count, never stored.
+
+### Layout
+
+```
+backend/
+  src/index.ts        bootstrap, SIGTERM shutdown
+  src/app.ts          express app, validation, error handling
+  src/db.ts           pg pool + the two queries the API needs
+  scripts/migrate.ts  applies migrations/*.sql
+  migrations/         001_contributions.sql
+  tests/api.test.ts   integration tests (node:test)
+shared/world-state.ts  single source of truth for stage thresholds
+```
+
+### Local setup
+
+```bash
+# 1. create the database (adjust role/password to taste)
+sudo -u postgres psql -c "CREATE ROLE worldremembers LOGIN PASSWORD '<pw>';"
+sudo -u postgres psql -c "CREATE DATABASE world_remembers OWNER worldremembers;"
+
+# 2. configure
+cd backend
+cp .env.example .env      # fill in DATABASE_URL, PORT, CORS_ORIGIN
+
+# 3. install, migrate, run
+npm install
+npm run db:migrate        # idempotent, safe to re-run
+npm run build
+npm start                 # or npm run dev
+
+# tests (uses a world_remembers_test database, created the same way)
+sudo -u postgres psql -c "CREATE DATABASE world_remembers_test OWNER worldremembers;"
+npm test
+```
+
+Environment variables:
+
+| Var | Default | Purpose |
+|---|---|---|
+| `DATABASE_URL` | (required) | postgres connection string |
+| `PORT` | 3002 | HTTP port |
+| `CORS_ORIGIN` | `*` | comma-separated origins, or `*` |
+
+### API contract
+
+| Method | Endpoint | Body | Success | Errors |
+|---|---|---|---|---|
+| GET | `/health` | - | `200 {"status":"ok","db":"up"}` | `503 {"status":"degraded","db":"down"}` |
+| GET | `/world` | - | `200 {"contributions":N,"stage":"AWAKENED"}` | `500 {"error":"internal_error"}` |
+| POST | `/contribute` | `{"playerId":"0x…40 hex…"}` | `200 {"success":true,"contributions":N,"stage":"…"}` | `400` invalid body/identity/extra fields, `413` too large, `500` db failure |
+
+The client sends its DCL session identity (`getUserData().userId`, an eth
+address). No wallet prompts, no signatures. `playerId` is required and
+validated against `0x` + 40 hex; it is normalized to lowercase and is the
+only accepted field. Clients can never submit a count: the server inserts
+exactly one row per request and derives everything else.
+
+### Stage thresholds
+
+`shared/world-state.ts` is the single source of truth, imported by both the
+scene (`src/config.ts`) and the API (`backend/src/app.ts`):
+0-99 DORMANT, 100-249 AWAKENED, 250-499 GROWING, 500+ FLOURISHING.
+
+### Deployment
+
+Ready for Render: listens on `process.env.PORT`, uses `DATABASE_URL`,
+handles SIGTERM, exposes `/health`. Nothing Render-specific in the code.
+
+### Tests
+
+`npm test` in `backend/` runs 11 integration tests against a real Postgres:
+health, zero-state world, contribute, contribute-then-world, exact stage
+boundaries (99/100/249/250/499/500), player id validation, invalid requests,
+the count-injection attack, database failure isolation, CORS, multiple
+contributions.

@@ -1,6 +1,7 @@
 // World state configuration. Every tunable number lives here so the scene
 // layout and tree progression can be adjusted after mobile testing.
 import { Color3, Color4 } from '@dcl/sdk/math'
+import { STAGE_NAMES, STAGE_THRESHOLDS } from '../shared/world-state'
 
 // Scene footprint: 2x2 parcels = 32m x 32m. Parcel coords stay easy to
 // change in scene.json without touching code.
@@ -22,11 +23,12 @@ export const TREE = {
   heart: { x: 16, y: 5.0, z: 16 }
 }
 
-// Tree progression thresholds. Configurable, not hard-coded anywhere else.
-export const STAGE_THRESHOLDS = [0, 100, 250, 500]
+// Tree progression thresholds and names live in ../shared/world-state.ts
+// (single source of truth, shared with the backend).
+export { STAGE_NAMES, STAGE_THRESHOLDS }
 
 export const STAGES = {
-  names: ['DORMANT', 'AWAKENED', 'GROWING', 'FLOURISHING'],
+  names: [...STAGE_NAMES],
   // heart glow per stage (emissive Color3)
   heartColor: [
     Color3.fromHexString('#6b5a33'), // dormant: dim ember
