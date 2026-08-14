@@ -314,8 +314,8 @@
       "data": {
         "0": {
           "json": {
-            "name": "SDK7 Scene Template",
-            "description": "template scene with SDK7",
+            "name": "The World Remembers",
+            "description": "A persistent social garden. Every tap helps the Memory Tree grow, and the world remembers.",
             "thumbnail": "images/scene-thumbnail.png",
             "categories": [],
             "author": "SDK",
