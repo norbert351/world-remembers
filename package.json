@@ -8,7 +8,8 @@
     "build": "sdk-commands build",
     "test:logic": "esbuild tests/state-logic.ts --bundle --platform=node --format=esm --outfile=/tmp/state-logic.mjs && node /tmp/state-logic.mjs",
     "test:smoke": "esbuild tests/scene-smoke.ts --bundle --platform=node --format=esm --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/scene-smoke.mjs && node /tmp/scene-smoke.mjs",
-    "test": "npm run test:logic && npm run test:smoke",
+    "test:http": "esbuild tests/http-provider.test.ts --bundle --platform=node --format=esm --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/http-provider.mjs && node --test /tmp/http-provider.mjs",
+    "test": "npm run test:logic && npm run test:smoke && npm run test:http",
     "upgrade-sdk": "npm install --save-dev @dcl/sdk@latest",
     "upgrade-sdk:next": "npm install --save-dev @dcl/sdk@next"
   },

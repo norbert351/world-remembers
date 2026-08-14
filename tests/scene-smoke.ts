@@ -4,8 +4,7 @@
 //     --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/scene-smoke.mjs
 import { engine, Transform, GltfContainer, MeshRenderer } from '@dcl/sdk/ecs'
 import { main } from '../src/index'
-import { addContribution, stageFor, worldState } from '../src/state'
-import { applyCurrentStage } from '../src/tree'
+import { applyWorldState, stageFor, worldState } from '../src/state'
 
 let failures = 0
 function check(name: string, cond: boolean, extra?: unknown) {
@@ -43,11 +42,10 @@ check('plaza at 16,0,16', positions.includes('16.0,0.0,16.0'))
 check('tree at 16,0.66,16', positions.includes('16.0,0.7,16.0'))
 check('heart at 16,5,16', positions.includes('16.0,5.0,16.0'))
 
-// state machine
-applyCurrentStage()
-check('dormant stage applied at 0 contributions', stageFor(worldState.contributions) === 0)
-for (let i = 0; i < 520; i++) addContribution()
+// state machine through the single apply path
+applyWorldState(0)
+check('dormant at 0 contributions', stageFor(worldState.contributions) === 0)
+applyWorldState(520)
 check('520 contributions -> flourishing', stageFor(worldState.contributions) === 3)
-applyCurrentStage()
 console.log(failures === 0 ? 'SMOKE TEST ALL PASS' : `${failures} FAILURES`)
 process.exit(failures === 0 ? 0 : 1)

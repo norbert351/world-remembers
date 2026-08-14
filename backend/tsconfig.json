@@ -14,5 +14,6 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "../shared/**/*.ts"]
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "../shared/**/*.ts"],
+  "exclude": ["tests/persistence-e2e.test.ts"]
 }

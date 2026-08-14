@@ -20,7 +20,10 @@ One Memory Tree model. Growth is visual state only: emissive heart, floating
 motes, a bloom ring of daisies, a warm point light, and the skybox mood.
 Thresholds and all visuals are configurable in `src/config.ts`.
 
-Phase A uses a local mock state provider. Phase B/C add the persistence API.
+Since Phase C the scene talks to the persistence API: world state loads from
+`GET /world` on entry, every tap posts `POST /contribute` with the player's
+DCL session identity, and only server-confirmed state mutates the scene.
+The API URL lives in one place, `API.baseUrl` in `src/config.ts`.
 
 ## Commands
 
@@ -65,15 +68,44 @@ models with `_collider` meshes use `invisibleMeshesCollisionMask: 3`,
 models without use `visibleMeshesCollisionMask: 3` (interactive) or 0
 (decorative).
 
+## Scene structure (Phase C)
+
+```
+src/
+  index.ts        entry, wires the HTTP provider and the state listener
+  config.ts       world state config + API.baseUrl (one place)
+  state.ts        provider interface, in-flight guard, applyWorldState
+  http-provider.ts  GET /world + POST /contribute, response validation
+  identity.ts     DCL session identity via getPlayer(), no wallet prompts
+  tree.ts         Memory Tree, growth stages, pulse + mote systems
+  garden.ts       ground, plaza, path, lanterns, props
+  ui.tsx          mobile-first react-ecs UI, server-confirmed toasts
+```
+
+The contribution contract: tap -> POST -> server inserts one row -> returned
+count applied through `applyWorldState` -> tree pulse and success toast fire
+only after persistence. Duplicate taps during an in-flight request are
+ignored. A failed request shows "The memory couldn't be saved. Try again."
+and never touches the counter.
+
+## Tests
+
+```bash
+npm test            # scene: logic + smoke + http provider (48 checks)
+cd backend && npm test       # API integration against real postgres (11)
+cd backend && npm run test:e2e  # full loop: provider -> API -> PG -> reload -> stages (7)
+```
+
 ## Known limits
 
 - In-world visual verification needs the Decentraland client (desktop or
   mobile app). This VM has no GPU, so the Bevy web client (WebGPU) and the
   desktop explorer can't render headless here. Verification performed:
   build, typecheck, node smoke test against the real SDK engine, asset
-  bounds, preview server serving.
-- Phase A persistence is mock only. Phase B adds the Express + Postgres API,
-  Phase C connects the scene to it.
+  bounds, and the persistence E2E through the real API + Postgres.
+- `API.baseUrl` defaults to `http://127.0.0.1:3002` for local dev. The
+  deployed world needs the production HTTPS URL there (or via build config).
+  For phone testing, use the machine's LAN IP so the phone can reach the API.
 
 ---
 

@@ -9,7 +9,8 @@
     "start": "node dist/backend/src/index.js",
     "dev": "tsx watch src/index.ts",
     "db:migrate": "node --env-file=.env --import tsx scripts/migrate.ts",
-    "test": "node --env-file=.env --import tsx --test tests/*.test.ts"
+    "test": "node --env-file=.env --import tsx --test tests/api.test.ts",
+    "test:e2e": "node --env-file=.env --import tsx --test tests/persistence-e2e.test.ts"
   },
   "engines": {
     "node": ">=20.0.0"

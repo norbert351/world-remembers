@@ -16,7 +16,7 @@ import {
 } from '@dcl/sdk/ecs'
 import { Color3, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { PULSE, STAGES, TREE } from './config'
-import { addContribution, stageFor, worldState } from './state'
+import { contributeToWorld, stageFor, worldState } from './state'
 
 export const heartEntity = engine.addEntity()
 export const glowRingEntity = engine.addEntity()
@@ -45,15 +45,17 @@ export function createMemoryTree(): Entity {
     states: [{ clip: TREE.clip, playing: true, loop: true }]
   })
 
-  // mobile interaction: tap the tree to contribute
+  // mobile interaction: tap the tree to contribute. The pulse fires only
+  // after the server confirms the contribution.
   pointerEventsSystem.onPointerDown(
     {
       entity: tree,
       opts: { button: InputAction.IA_POINTER, hoverText: 'HELP THE TREE GROW' }
     },
     () => {
-      addContribution()
-      startPulse()
+      void contributeToWorld().then((ok) => {
+        if (ok) startPulse()
+      })
     }
   )
 

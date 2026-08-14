@@ -1,6 +1,14 @@
-// State logic tests: stage derivation and the contribution flow
+// State logic tests: stage derivation, world state application, contribution flow
 import { STAGE_NAMES, STAGE_THRESHOLDS, stageFor, stageIndexFor } from '../shared/world-state'
-import { addContribution, loadWorldState, worldState } from '../src/state'
+import {
+  applyWorldState,
+  contributeToWorld,
+  contributionState,
+  loadWorldState,
+  setIdentityResolver,
+  setStateListener,
+  worldState
+} from '../src/state'
 import { STAGES } from '../src/config'
 
 let failures = 0
@@ -42,17 +50,36 @@ check(
     STAGES.motesVisible.every((v, i) => i === 0 || v >= STAGES.motesVisible[i - 1])
 )
 
-// contribution flow
+// world state application is the single controlled update path
+let listenerCalls = 0
+setStateListener(() => {
+  listenerCalls++
+})
 worldState.contributions = 0
 worldState.version = 0
-addContribution()
-check('contribution increments', worldState.contributions === 1)
-check('version bumps', worldState.version === 1)
-check('timestamp recorded', worldState.lastContributionAt > 0)
+applyWorldState(124)
+check('applyWorldState sets the count', worldState.contributions === 124)
+check('applyWorldState bumps version', worldState.version === 1)
+check('applyWorldState notifies the listener', listenerCalls === 1)
+check('stage derived from applied count', stageFor(worldState.contributions) === 'AWAKENED')
 
-// mock provider round trip
+// mock provider round trip (LocalProvider is the default)
+setIdentityResolver(() => '0x' + '1'.repeat(40))
+worldState.contributions = 0
+worldState.version = 0
+contributionState.status = 'idle'
+contributionState.lastErrorAt = 0
+worldState.lastContributionAt = 0
+const ok = await contributeToWorld()
+check('contribute succeeds with mock provider', ok === true)
+check('mock provider count applied', worldState.contributions === 1)
+check('success timestamp recorded', worldState.lastContributionAt > 0)
+check('guard released after success', contributionState.inFlight === false)
+check('status rests at success', contributionState.status === 'success')
+const second = await contributeToWorld()
+check('next tap works after success', second === true && worldState.contributions === 2)
 await loadWorldState()
-check('mock provider returns saved count', worldState.contributions === 1)
+check('mock load returns persisted count', worldState.contributions === 2)
 
 console.log(failures === 0 ? 'LOGIC TESTS ALL PASS' : `${failures} FAILURES`)
 process.exit(failures === 0 ? 0 : 1)

@@ -70,7 +70,9 @@ export const COLORS = {
   bush: Color4.fromHexString('#5f8f4f')
 }
 
-// API base for Phase C. Phase A uses the local mock provider.
+// World API endpoint. One place, used by the HTTP provider only.
+// Local dev default. For the deployed world this must be an HTTPS URL
+// reachable from the Decentraland client (see README).
 export const API = {
-  baseUrl: 'https://world-remembers-api.example.com'
+  baseUrl: 'http://127.0.0.1:3002'
 }

@@ -1,9 +1,10 @@
-// The World Remembers — Memory Tree vertical slice (Phase A).
-// Enter, see the tree, tap, contribute, watch it respond.
+// The World Remembers — persistent Memory Tree (Phase C).
+// Enter, see the tree, tap, the server saves, the tree responds.
 import { engine, SkyboxTime } from '@dcl/sdk/ecs'
 import { setupGarden } from './garden'
-import { STAGES } from './config'
-import { loadWorldState } from './state'
+import { API, STAGES } from './config'
+import { HttpWorldStateProvider } from './http-provider'
+import { loadWorldState, setStateListener, worldState } from './state'
 import {
   applyCurrentStage,
   createHeartLight,
@@ -17,6 +18,13 @@ export function main() {
   // fixed skybox so every visitor sees the stage mood consistently
   SkyboxTime.create(engine.RootEntity, { fixedTime: STAGES.skyTimes[0] })
 
+  // the server is the source of truth for world state
+  worldState.provider = new HttpWorldStateProvider(API.baseUrl)
+
+  // every server-confirmed state change flows through applyWorldState and
+  // lands here, so tree and world always move together
+  setStateListener(() => applyCurrentStage())
+
   setupGarden()
   createHeartLight()
   createMemoryTree()
@@ -26,8 +34,6 @@ export function main() {
   engine.addSystem(pulseSystem)
   engine.addSystem(moteOrbitSystem)
 
-  // load the persisted count (mock provider in Phase A) and apply its stage
-  void loadWorldState().then(() => {
-    applyCurrentStage()
-  })
+  // the environment renders immediately; world state syncs in the background
+  void loadWorldState()
 }
