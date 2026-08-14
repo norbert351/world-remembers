@@ -1,0 +1,44 @@
+{
+  "ecs7": true,
+  "runtimeVersion": "7",
+  "display": {
+    "title": "The World Remembers",
+    "description": "A persistent social garden. Every tap helps the Memory Tree grow, and the world remembers.",
+    "navmapThumbnail": "images/scene-thumbnail.png",
+    "favicon": "favicon_asset"
+  },
+  "owner": "",
+  "contact": {
+    "name": "The World Remembers",
+    "email": ""
+  },
+  "main": "bin/index.js",
+  "tags": ["social", "garden", "memory", "mobile"],
+  "scene": {
+    "parcels": ["0,0", "1,0", "0,1", "1,1"],
+    "base": "0,0"
+  },
+  "spawnPoints": [
+    {
+      "name": "spawn1",
+      "default": true,
+      "position": {
+        "x": [7, 9],
+        "y": [0, 0],
+        "z": [7, 9]
+      },
+      "cameraTarget": {
+        "x": 16,
+        "y": 3,
+        "z": 16
+      }
+    }
+  ],
+  "requiredPermissions": [
+    "USE_FETCH"
+  ],
+  "featureToggles": {
+    "voiceChat": "enabled",
+    "portableExperiences": "enabled"
+  }
+}
