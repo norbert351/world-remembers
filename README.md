@@ -1,265 +1,76 @@
-# SDK7 Template scene
+# The World Remembers
 
-## Try it out
+A persistent social garden for the Decentraland Friendzone Mobile Buildathon.
+Every tap helps the Memory Tree grow, and the world remembers.
 
-**Previewing the scene**
+## Milestone 1: Memory Tree vertical slice (Phase A)
 
-1. Download this repository.
+Enter the scene, walk to the central tree, tap **HELP THE TREE GROW**.
+The tree responds with a pulse, the counter rises, and the world slowly
+warms from dusk toward golden day as the tree progresses:
 
-2. Install the [Decentraland Editor](https://docs.decentraland.org/creator/development-guide/sdk7/editor/)
+| Stage | Contributions | Mood |
+|---|---|---|
+| DORMANT | 0–99 | Dusk, dim ember heart, 4 base flowers |
+| AWAKENED | 100–249 | Sunset glow, 8 flowers, first motes |
+| GROWING | 250–499 | Golden hour, 12 flowers, 6 motes |
+| FLOURISHING | 500+ | Bright warm day, 16 flowers, 10 motes |
 
-3. Open a Visual Studio Code window on this scene's root folder. Not on the root folder of the whole repo, but instead on this sub-folder that belongs to the scene.
+One Memory Tree model. Growth is visual state only: emissive heart, floating
+motes, a bloom ring of daisies, a warm point light, and the skybox mood.
+Thresholds and all visuals are configurable in `src/config.ts`.
 
-4. Open the Decentraland Editor tab, and press **Run Scene**
+Phase A uses a local mock state provider. Phase B/C add the persistence API.
 
-Alternatively, you can use the command line. Inside this scene root directory run:
+## Commands
 
-```
-npm run start
-```
-
-## What's new on SDK 7
-
-Below are some basic concepts about the SDK 7 syntax. For more details, see the [Documentation site](https://docs.decentraland.org/creator/).
-
-### Entities
-
-An Entity is just an ID. It is an abstract concept not represented by any data structure. There is no "class Entity". Just a number that is used as a reference to group different components.
-
-```ts
-const myEntity = engine.addEntity()
-console.console.log(myEntity) // 100
-
-// Remove Entity
-engine.removeEntity(myEntity)
+```bash
+npm install
+npm run build      # bundle + typecheck
+npm test           # logic tests + scene smoke test (node, no explorer needed)
+npm run start      # local preview (opens Decentraland client / bevy web)
 ```
 
-> Note: Note that it's no longer necessary to separately create an entity and then add it to the engine, this is all done in a single act.
+## Structure
 
-### Components
-
-The component is just a data container, WITHOUT any functions.
-
-To add a component to an entity, the entry point is now the component type, not the entity.
-
-```ts
-Transform.create(myEntity, <params>)
+```
+src/
+  index.ts      entry, wires everything
+  config.ts     world state config: thresholds, stages, colors, layout
+  state.ts      contribution state + provider interface (mock in Phase A)
+  tree.ts       Memory Tree, growth stages, pulse + mote systems
+  garden.ts     ground, plaza, path, lanterns, props
+  ui.tsx        mobile-first react-ecs UI
+assets/Models/  validated OpenDCL GLBs (see report below)
+tests/          logic + smoke tests (node, no explorer required)
 ```
 
-This is different from how the syntax was in SDK6:
+## Asset validation
 
-```ts
-// OLD Syntax
-myEntity.addComponent(Transform)
-```
+All models from the OpenDCL catalog (free for Decentraland scenes, Apache-2.0
+repo). Every GLB was checked with a node-transform-aware bounding box script,
+collider detection, and animation listing before placement.
 
-#### Base Components
+| Asset | Native bbox | Tris | Colliders | Anim | Used for |
+|---|---|---|---|---|---|
+| tree-memory.glb | 4.01×3.71×3.46 m | 768 | none | Tree_Action | hero tree (scale 2, y 0.66 → world bbox x[12.9,21.0] y[0,7.4] z[12.6,19.5]) |
+| flower-daisy.glb | 0.36×0.84×0.39 m | 47 | none | none | bloom ring + garden flowers |
+| bush-02.glb | 2.10×0.70×1.99 m | 68 | yes | none | garden bushes |
+| bush-03.glb | 1.53×0.86×2.30 m | 57 | yes | none | garden bushes |
+| fern.glb | 1.35×0.53×1.34 m | 80 | none | fernidle | path-side foliage |
+| boulders.glb | 0.63×1.76×0.70 m | 62 | yes | All Animations (not played) | rocks |
 
-Base components already come packed as part of the SDK. Most of them interact directly with the renderer in some way. This is the full list of currently supported base components:
+Collision masks follow the official skill rules, never mixed:
+models with `_collider` meshes use `invisibleMeshesCollisionMask: 3`,
+models without use `visibleMeshesCollisionMask: 3` (interactive) or 0
+(decorative).
 
-- Transform
-- Animator
-- Material
-- MeshRenderer
-- MeshCollider
-- AudioSource
-- AudioStream
-- AvatarAttach
-- AvatarModifierArea
-- AvatarShape
-- Billboard
-- CameraMode
-- CameraModeArea
-- GltfContainer
-- NftShape
-- PointerEventsResult
-- PointerHoverFeedback
-- PointerLock
-- Raycast
-- RaycastResult
-- TextShape
-- VisibilityComponent
+## Known limits
 
-```ts
-const entity = engine.addEntity()
-Transfrom.create(entity, {
-  position: Vector3.create(12, 1, 12)
-  scale: Vector3.One(),
-  rotation: Quaternion.Identity()
-})
-GltfContainer.create(zombie, {
-  withCollisions: true,
-  isPointerBlocker: true,
-  visible: true,
-  src: 'models/zombie.glb'
-})
-```
-
-#### Custom Components
-
-Each component must have a unique number ID. If a number is repeated, the engine or another player receiving updates might apply changes to the wrong component. Note that numbers 1-2000 are reserved for the base components.
-
-When creating a custom component you declare the schema of the data to be stored in it. Every field in a component MUST belong to one of the built-in special schemas provided as part of the SDK. These special schemas include extra functionality that allows them to be serialized/deserialized.
-
-Currently, the names of these special schemas are:
-
-##### Primitives
-
-1. `Schemas.Boolean`: true or false (serialized as a Byte)
-2. `Schemas.String`: UTF8 strings (serialized length and content)
-3. `Schemas.Float`: single precission float
-4. `Schemas.Double`: double precision float
-5. `Schemas.Byte`: a single byte, integer with range 0..255
-6. `Schemas.Short`: 16 bits signed-integer with range -32768..32767
-7. `Schemas.Int`: 32 bits signed-integer with range -2³¹..(2³¹-1)
-8. `Schemas.Int64`: 64 bits signed-integer
-9. `Schemas.Number`: an alias to Schemas.Float
-
-##### Specials
-
-10. `Schemas.Entity`: a wrapper to int32 that casts the type to `Entity`
-11. `Schemas.Vector3`: a Vector3 with { x, y, z }
-12. `Schemas.Quaternion`: a Quaternion with { x, y, z, w}
-13. `Schemas.Color3`: a Color3 with { r, g, b }
-14. `Schemas.Color4`: a Colo4 with { r, g, b, a }
-
-##### Schema generator
-
-15. `Schemas.Enum`: passing the serialization Schema and the original Enum as generic
-16. `Schemas.Array`: passing the item Schema
-17. `Schemas.Map`: passing a Map with Schemas as values
-18. `Schemas.Optional`: passing the schema to serialize
-
-Below are some examples of how these schemas can be declared.
-
-```ts
-const object = Schemas.Map({ x: Schemas.Int }) // { x: 1 }
-
-const array = Schemas.Map(Schemas.Int) // [1,2,3,4]
-
-const objectArray = Schemas.Array(Schemas.Map({ x: Schemas.Int })) // [{ x: 1 }, { x: 2 }]
-
-const BasicSchemas = Schemas.Map({
-  x: Schemas.Int,
-  y: Schemas.Float,
-  text: Schemas.String,
-  flag: Schemas.Boolean
-}) // { x: 1, y: 1.412, text: 'ecs 7 text', flag: true }
-
-const VelocitySchema = Schemas.Map({
-  x: Schemas.Float,
-  y: Schemas.Float,
-  z: Schemas.Float
-})
-```
-
-To then create a custom component using one of these schemas, use the following syntax:
-
-```ts
-export const myCustomComponent = engine.defineComponent(MyDataSchema, ComponentID)
-```
-
-For contrast, below is an example of how components were constructed prior to SDK 7.
-
-```ts
-/**
- * OLD SDK
- */
-
-// Define Component
-@Component('velocity')
-export class Velocity extends Vector3 {
-  constructor(x: number, y: number, z: number) {
-    super(x, y, z)
-  }
-}
-// Create entity
-const wheel = new Entity()
-
-// Create instance of component with default values
-wheel.addComponent(new WheelSpin())
-
-/**
- * ECS 7
- */
-// Define Component
-const VelocitySchema = Schemas.Map({
-  x: Schemas.Float,
-  y: Schemas.Float,
-  z: Schemas.Float
-})
-const COMPONENT_ID = 2008
-const VelocityComponent = engine.defineComponent(Velocity, COMPONENT_ID)
-// Create Entity
-const entity = engine.addEntity()
-
-// Create instance of component
-VelocityComponent.create(entity, { x: 1, y: 2.3, z: 8 })
-
-// Remove instance of a component
-VelocityComponent.deleteFrom(entity)
-```
-
-### Systems
-
-Systems are pure & simple functions.
-All your logic comes here.
-A system might hold data which is relevant to the system itself, but no data about the entities it processes.
-
-To add a system, all you need to do is define a function and add it to the engine. The function may optionally include a `dt` parameter with the delay since last frame, just like in prior versions of the SDK.
-
-```ts
-// Basic system
-function mySystem() {
-  console.log('my system is running')
-}
-
-engine.addSystem(mySystem)
-
-// System with dt
-function mySystemDT(dt: number) {
-  console.log('time since last frame:  ', dt)
-}
-
-engine.addSystem(mySystemDT)
-```
-
-#### Query components
-
-The way to group/query the components inside systems is using the method getEntitiesWith.
-`engine.getEntitiesWith(...components)`.
-
-```ts
-function physicsSystem(dt: number) {
-  for (const [entity, transform, velocity] of engine.getEntitiesWith(Transform, Velocity)) {
-    // transform & velocity are read only components.
-    if (transform.position.x === 10) {
-      // To update a component, you need to call the `.mutable` method
-      const mutableVelocity = VelocityComponent.getMutable(entity)
-      mutableVelocity.x += 1
-    }
-  }
-}
-
-// Add system to the engine
-engine.addSystem(physicsSystem)
-
-// Remove system
-engine.removeSystem(physicsSystem)
-```
-
-### Mutability
-
-Mutability is now an important distinction. We can choose to deal with mutable or with immutable versions of a component. We should use `getMutable` only when we plan to make changes to a component. Dealing with immutable versions of components results in a huge gain in performance.
-
-The `.get()` function in a component returns an immutable version of the component. You can only read its values, but can't change any of the properties on it.
-
-```ts
-const immutableTransform = Transform.get(myEntity)
-```
-
-To fetch the mutable version of a component, call it via `ComponentDefinition.getMutable()`. For example:
-
-```ts
-const mutableTransform = Transform.getMutable(myEntity)
-```
+- In-world visual verification needs the Decentraland client (desktop or
+  mobile app). This VM has no GPU, so the Bevy web client (WebGPU) and the
+  desktop explorer can't render headless here. Verification performed:
+  build, typecheck, node smoke test against the real SDK engine, asset
+  bounds, preview server serving.
+- Phase A persistence is mock only. Phase B adds the Express + Postgres API,
+  Phase C connects the scene to it.
