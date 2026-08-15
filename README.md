@@ -1,7 +1,32 @@
 # The World Remembers
 
 A persistent social garden for the Decentraland Friendzone Mobile Buildathon.
-Every tap helps the Memory Tree grow, and the world remembers.
+Every tap helps the Memory Tree grow, and the world remembers who was here.
+
+## Milestone 2: Memory Stones (Phase D)
+
+Three stones placed around the garden record every visitor. Tap a stone to
+read who left a trace before you, then leave one of four fixed reactions:
+
+| Reaction | Meaning |
+|---|---|
+| 🌱 | I found this place. |
+| ✨ | This place is beautiful. |
+| 🌙 | I'll come back. |
+| ❤️ | Someone was here. |
+
+No free-form text: the server whitelists exactly these four reactions. One
+memory per player per stone, enforced by a `UNIQUE(stone_id, player_id)`
+constraint — a duplicate gets a 409 and the UI shows "YOU ALREADY LEFT A
+MEMORY HERE" with the stored reaction. History is newest first, and the
+stones show a floating billboard count ("7 MEMORIES") before you even open
+them. Success effects (glow pulse, toast) fire only after the API confirms
+the write.
+
+Stones are primitive-built (dark smooth sphere, emissive rune, base glow
+ring, 3 motes each), so no new GLB was needed and the mesh budget stays
+tiny: 86 entities total (up from 59), 32 GLBs (unchanged), 43 mesh
+renderers (up from 25), 3 text labels.
 
 ## Milestone 1: Memory Tree vertical slice (Phase A)
 
@@ -39,11 +64,15 @@ npm run start      # local preview (opens Decentraland client / bevy web)
 ```
 src/
   index.ts      entry, wires everything
-  config.ts     world state config: thresholds, stages, colors, layout
+  config.ts     world state config: thresholds, stages, colors, layout, stones
   state.ts      contribution state + provider interface (mock in Phase A)
+  stone-state.ts  memory stone state + provider interface
+  http-provider.ts  HTTP providers for world state + stones, response validation
+  stones.ts     Memory Stones: entities, interaction, pulse + mote systems
   tree.ts       Memory Tree, growth stages, pulse + mote systems
   garden.ts     ground, plaza, path, lanterns, props
   ui.tsx        mobile-first react-ecs UI
+shared/         stage thresholds + stone/reaction whitelist (scene + API)
 assets/Models/  validated OpenDCL GLBs (see report below)
 tests/          logic + smoke tests (node, no explorer required)
 ```
@@ -103,9 +132,12 @@ cd backend && npm run test:e2e  # full loop: provider -> API -> PG -> reload -> 
   desktop explorer can't render headless here. Verification performed:
   build, typecheck, node smoke test against the real SDK engine, asset
   bounds, and the persistence E2E through the real API + Postgres.
-- `API.baseUrl` defaults to `http://127.0.0.1:3002` for local dev. The
-  deployed world needs the production HTTPS URL there (or via build config).
-  For phone testing, use the machine's LAN IP so the phone can reach the API.
+- `API.baseUrl` points at a Cloudflare quick tunnel while phone testing
+  (the VM's LAN IP is unreachable from a phone, and the scene runtime has
+  no `location` global to derive a host). Quick tunnel URLs rotate on
+  restart: after restarting the API tunnel, update `API.baseUrl` in
+  `src/config.ts` and rebuild. The deployed world needs the production
+  HTTPS URL there.
 
 ---
 
@@ -164,12 +196,19 @@ Environment variables:
 | GET | `/health` | - | `200 {"status":"ok","db":"up"}` | `503 {"status":"degraded","db":"down"}` |
 | GET | `/world` | - | `200 {"contributions":N,"stage":"AWAKENED"}` | `500 {"error":"internal_error"}` |
 | POST | `/contribute` | `{"playerId":"0x…40 hex…"}` | `200 {"success":true,"contributions":N,"stage":"…"}` | `400` invalid body/identity/extra fields, `413` too large, `500` db failure |
+| GET | `/stones` | - | `200 {"stones":[{"id":"garden","memoryCount":N},…]}` | `500 {"error":"internal_error"}` |
+| GET | `/stones/:id` | - | `200 {"stone":{"id":"garden","memoryCount":N},"memories":[{"playerId":"0x…","reaction":"found","createdAt":"…"}]}` (newest first) | `404 {"error":"unknown_stone"}`, `500` |
+| POST | `/stones/:id/memories` | `{"playerId":"0x…40 hex…","reaction":"found"}` | `201 {"success":true,"stoneId":"garden","memoryCount":N,"memories":[…]}` | `400` invalid body/identity/reaction/extra fields, `404` unknown stone, `409 {"success":false,"error":"already_left_memory","memory":{…}}` duplicate, `413` too large, `500` db failure |
 
 The client sends its DCL session identity (`getUserData().userId`, an eth
 address). No wallet prompts, no signatures. `playerId` is required and
 validated against `0x` + 40 hex; it is normalized to lowercase and is the
-only accepted field. Clients can never submit a count: the server inserts
-exactly one row per request and derives everything else.
+only accepted field on `/contribute`. Memory submissions accept exactly
+`playerId` and `reaction`, and `reaction` must be on the whitelist shared
+with the scene (`shared/stones.ts`). Clients can never submit a count: the
+server inserts exactly one row per request and derives everything else.
+One memory per player per stone (DB `UNIQUE` constraint), duplicates get a
+409 carrying the stored memory.
 
 ### Stage thresholds
 
@@ -184,8 +223,24 @@ handles SIGTERM, exposes `/health`. Nothing Render-specific in the code.
 
 ### Tests
 
-`npm test` in `backend/` runs 11 integration tests against a real Postgres:
-health, zero-state world, contribute, contribute-then-world, exact stage
-boundaries (99/100/249/250/499/500), player id validation, invalid requests,
-the count-injection attack, database failure isolation, CORS, multiple
-contributions.
+`npm test` in `backend/` runs 25 integration tests against a real Postgres
+(11 contribution tests + 14 stone tests): health, zero-state world,
+contribute, contribute-then-world, exact stage boundaries (99/100/249/250/
+499/500), player id validation, invalid requests, the count-injection
+attack, database failure isolation, CORS, multiple contributions, stone
+list/detail, valid memory creation, id normalization, invalid player ids,
+invalid reactions, unknown stones, duplicate 409s, cross-stone freedom,
+unexpected fields, oversized payloads, newest-first ordering, and DB
+failure isolation for all three stone endpoints.
+
+`npm run test:e2e` runs 13 end-to-end tests (7 contribution + 6 stone) that
+spawn the real API against Postgres and drive the scene's actual HTTP
+providers: Player A contributes/remembers, Player B sees it and adds their
+own, both survive a reload, duplicates are rejected, and the list counts
+match.
+
+Scene tests (`npm test` at the root) run the logic, smoke, HTTP provider
+and stone provider suites against node (no explorer needed), including the
+stone provider suite: parsing, list/detail fetching, select/close,
+in-flight guard, duplicate prevention client-side, 409 handling, failure
+without optimistic mutation, and persistence across a simulated reload.
