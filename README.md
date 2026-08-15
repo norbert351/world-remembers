@@ -3,6 +3,32 @@
 A persistent social garden for the Decentraland Friendzone Mobile Buildathon.
 Every tap helps the Memory Tree grow, and the world remembers who was here.
 
+## Milestone 3: World polish + Memory Moment (Phase E)
+
+Three visual zones give the world one story: a warm Tree Plaza, a green
+peaceful garden, and a darker mysterious stone area. The spawn path now
+runs straight toward the tree (extended stepping stones, low benches at the
+plaza edge, glowing trail plants that lead to the stones). The tree got
+ground embers, an inner flower ring, and a small mote burst on every
+server-confirmed contribution.
+
+The **Memory Moment** is the world's automatic ritual. Every
+`RITUAL.intervalSeconds` (dev: 5 minutes, production: one world day) the
+world performs it alone:
+
+1. **Quiet** — "THE WORLD IS REMEMBERING...", sky shifts to dusk (2s)
+2. **Response** — tree glow rises, a light wave travels outward, the three
+   stones pulse one after another (4s)
+3. **Sky event** — a glowing comet crosses the sky, motes rise from the
+   tree (4s)
+4. **Complete** — "THE WORLD REMEMBERS." (2s)
+
+The intensity comes from real state: 0 for an empty world, 1 once the tree
+awakened or a stone has a memory, 2 when the tree is grown AND memories
+exist. The ritual needs no other player, no server event, no input — it
+simply happens. Onboarding shows three short lines on the first visit of a
+session, then never again.
+
 ## Milestone 2: Memory Stones (Phase D)
 
 Three stones placed around the garden record every visitor. Tap a stone to
@@ -25,8 +51,10 @@ the write.
 
 Stones are primitive-built (dark smooth sphere, emissive rune, base glow
 ring, 3 motes each), so no new GLB was needed and the mesh budget stays
-tiny: 86 entities total (up from 59), 32 GLBs (unchanged), 43 mesh
-renderers (up from 25), 3 text labels.
+tiny: 136 entities total (up from 59 in Phase C), 38 GLBs, 81 mesh
+renderers, 3 text labels. Phase E additions are all primitives or reused
+verified GLBs (daisy): zone discs, path stones, plaza border, benches,
+trail plants, tree embers and inner flower ring.
 
 ## Milestone 1: Memory Tree vertical slice (Phase A)
 
