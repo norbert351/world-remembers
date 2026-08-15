@@ -10,7 +10,9 @@
     "test:smoke": "esbuild tests/scene-smoke.ts --bundle --platform=node --format=esm --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/scene-smoke.mjs && node /tmp/scene-smoke.mjs",
     "test:http": "esbuild tests/http-provider.test.ts --bundle --platform=node --format=esm --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/http-provider.mjs && node --test /tmp/http-provider.mjs",
     "test:stones": "esbuild tests/stone-provider.test.ts --bundle --platform=node --format=esm --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/stone-provider.mjs && node --test /tmp/stone-provider.mjs",
-    "test": "npm run test:logic && npm run test:smoke && npm run test:http && npm run test:stones",
+    "test:ritual": "esbuild tests/ritual.test.ts --bundle --platform=node --format=esm --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/ritual.mjs && node --test /tmp/ritual.mjs",
+    "test:onboarding": "esbuild tests/onboarding.test.ts --bundle --platform=node --format=esm --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/onboarding.mjs && node --test /tmp/onboarding.mjs",
+    "test": "npm run test:logic && npm run test:smoke && npm run test:http && npm run test:stones && npm run test:ritual && npm run test:onboarding",
     "upgrade-sdk": "npm install --save-dev @dcl/sdk@latest",
     "upgrade-sdk:next": "npm install --save-dev @dcl/sdk@next"
   },

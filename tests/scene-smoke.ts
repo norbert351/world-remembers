@@ -32,12 +32,14 @@ for (const [entity] of engine.getEntitiesWith(Transform)) {
   if (TextShape.getOrNull(entity)) textCount++
 }
 
-// Phase C baseline was 59/32/25. Phase D adds 3 stones x 9 entities
-// (root + body + rune + ring + label + rig + 3 motes): 86 total, no new
-// GLBs (32), 43 mesh renderers, 3 text labels.
-check('86 entities with transforms', total === 86, total)
-check('32 gltf entities', gltfCount === 32, gltfCount)
-check('43 mesh entities', meshCount === 43, meshCount)
+// Phase C baseline was 59/32/25. Phase D added 3 stones x 9 entities
+// (root + body + rune + ring + label + rig + 3 motes): 86/32/43/3.
+// Phase E adds composition (2 zone discs + 3 path stones + 16 plaza border
+// + 2 benches x 4 + 4 trail plants x 3 = 41) and tree hero extras
+// (3 ground dots + 6 inner flowers = 9): 136/38/81/3.
+check('136 entities with transforms', total === 136, total)
+check('38 gltf entities', gltfCount === 38, gltfCount)
+check('81 mesh entities', meshCount === 81, meshCount)
 check('3 text labels (one per stone)', textCount === 3, textCount)
 
 // key placements from the design
@@ -61,6 +63,14 @@ for (const s of STONES) {
   const inBounds = s.position.x >= 0 && s.position.x <= 32 && s.position.z >= 0 && s.position.z <= 32
   check(`stone ${s.id} in bounds`, inBounds)
 }
+
+// Phase E composition placements
+check('path extension stone at 8.2,8.2', positions.includes('8.2,0.0,8.2'))
+check('path extension stone at 13.4,13.4', positions.includes('13.4,0.0,13.4'))
+check('garden zone disc at 8,15', positions.includes('8.0,0.0,15.0'))
+check('stone zone disc at 26,26', positions.includes('26.0,0.0,26.0'))
+check('bench at 21.2,14.4', positions.includes('21.2,0.0,14.4'))
+check('bench at 11.4,20.2', positions.includes('11.4,0.0,20.2'))
 
 // state machine through the single apply path
 applyWorldState(0)

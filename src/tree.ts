@@ -5,6 +5,7 @@ import {
   Animator,
   engine,
   Entity,
+  EntityState,
   GltfContainer,
   InputAction,
   LightSource,
@@ -23,6 +24,13 @@ export const glowRingEntity = engine.addEntity()
 const moteRig = engine.addEntity()
 const moteEntities: Entity[] = []
 const flowerEntities: Entity[] = []
+const innerFlowerEntities: Entity[] = []
+const groundDotEntities: Entity[] = []
+// burst motes: spawned on a confirmed contribution, animated by pulseSystem
+const burstMotes: Entity[] = []
+let burstTime = 0
+const BURST_COUNT = 4
+const BURST_DURATION = 1.2
 
 // pulse state, active for PULSE.duration seconds after each contribution
 let pulseTime = 0
@@ -63,7 +71,55 @@ export function createMemoryTree(): Entity {
   createMotes()
   createGlowRing()
   createBloomRing()
+  createHeroExtras()
   return tree
+}
+
+// Phase E: make the tree a stronger focal point. Ground glow dots mark the
+// base like small embers, and an inner flower ring tightens the canopy
+// silhouette without touching the tree model.
+function createHeroExtras(): void {
+  // three small ground embers around the trunk base
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + 0.4
+    const dot = engine.addEntity()
+    Transform.create(dot, {
+      position: Vector3.create(
+        TREE.position.x + Math.cos(a) * 1.15,
+        0.06,
+        TREE.position.z + Math.sin(a) * 1.15
+      ),
+      scale: Vector3.create(0.16, 0.03, 0.16)
+    })
+    MeshRenderer.setCylinder(dot, 1, 1)
+    Material.setPbrMaterial(dot, {
+      emissiveColor: Color3.fromHexString('#ffb45e'),
+      emissiveIntensity: 1.4,
+      albedoColor: { r: 0.2, g: 0.12, b: 0.04, a: 1 }
+    })
+    groundDotEntities.push(dot)
+  }
+
+  // six daisies in a tight inner ring, closer to the trunk
+  const inner = 6
+  for (let i = 0; i < inner; i++) {
+    const angle = (i / inner) * Math.PI * 2 + 0.2
+    const flower = engine.addEntity()
+    Transform.create(flower, {
+      position: Vector3.create(
+        TREE.position.x + Math.cos(angle) * 1.55,
+        0.05,
+        TREE.position.z + Math.sin(angle) * 1.55
+      ),
+      rotation: Quaternion.fromEulerDegrees(0, (i / inner) * 360, 0)
+    })
+    GltfContainer.create(flower, {
+      src: 'assets/Models/flower-daisy.glb',
+      visibleMeshesCollisionMask: 0,
+      invisibleMeshesCollisionMask: 0
+    })
+    innerFlowerEntities.push(flower)
+  }
 }
 
 function createHeart(): void {
@@ -191,6 +247,33 @@ export function applyStage(stage: number): void {
 
 export function startPulse(): void {
   pulseTime = PULSE.duration
+  spawnBurst()
+}
+
+// Small magical response, not an explosion: four motes rise from the trunk
+// base while the heart pulses. Spawned only on a server-confirmed
+// contribution and removed when the animation finishes.
+function spawnBurst(): void {
+  for (let i = 0; i < BURST_COUNT; i++) {
+    const mote = engine.addEntity()
+    const angle = Math.random() * Math.PI * 2
+    const radius = 0.7 + Math.random() * 0.9
+    Transform.create(mote, {
+      position: Vector3.create(
+        TREE.position.x + Math.cos(angle) * radius,
+        0.3,
+        TREE.position.z + Math.sin(angle) * radius
+      ),
+      scale: Vector3.create(0.07, 0.07, 0.07)
+    })
+    MeshRenderer.setSphere(mote)
+    Material.setPbrMaterial(mote, {
+      emissiveColor: Color3.fromHexString('#ffe9b0'),
+      emissiveIntensity: 3.5
+    })
+    burstMotes.push(mote)
+  }
+  burstTime = 0
 }
 
 // Two tiny systems: one drives the contribution pulse (idle when not active),
@@ -206,6 +289,25 @@ export function pulseSystem(dt: number): void {
   Transform.getMutable(glowRingEntity).scale = Vector3.create(rs, 0.05, rs)
   const mat = Material.getFlatMutable(heartEntity)
   mat.emissiveIntensity = STAGES.heartIntensity[currentStage] + PULSE.emissiveFlash * wave
+  // ground embers and inner flowers brighten briefly with the pulse
+  const ember = Material.getFlatMutable(groundDotEntities[0])
+  ember.emissiveIntensity = 1.4 + 1.6 * wave
+  // burst motes rise and fade
+  if (burstMotes.length > 0) {
+    burstTime += dt
+    for (const mote of burstMotes) {
+      const t = Transform.getMutable(mote)
+      t.position = Vector3.create(t.position.x, t.position.y + dt * 0.8, t.position.z)
+      const m = Material.getFlatMutable(mote)
+      m.emissiveIntensity = Math.max(0, 3.5 * (1 - burstTime / BURST_DURATION))
+    }
+    if (burstTime >= BURST_DURATION) {
+      for (const m of burstMotes) {
+        if (engine.getEntityState(m) !== EntityState.Removed) engine.removeEntity(m)
+      }
+      burstMotes.length = 0
+    }
+  }
 }
 
 export function moteOrbitSystem(dt: number): void {

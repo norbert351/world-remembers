@@ -104,3 +104,83 @@ export const STONES = [
     runeColor: Color3.fromHexString('#ffd9a0')
   }
 ] as const
+
+// --- Phase E: world polish ------------------------------------------------
+
+// World Heartbeat / ritual. The interval is the ONLY production-facing knob:
+// dev uses 5 minutes, production should be once per world day (86400).
+// Everything else in this block is per-phase timing, tunable in one place.
+export const RITUAL = {
+  // seconds between automatic Memory Moments
+  intervalSeconds: 300,
+  // per-phase durations, seconds
+  quiet: 2, // "THE WORLD IS REMEMBERING..."
+  response: 4, // tree glow + wave + stones respond one after another
+  sky: 4, // comet crosses the sky
+  complete: 2, // "THE WORLD REMEMBERS."
+  // the wave ring travels this far from the tree, meters
+  waveMaxRadius: 11,
+  // comet path across the sky, meters (scene space)
+  cometStart: { x: 4, y: 30, z: 6 },
+  cometEnd: { x: 28, y: 26, z: 26 }
+}
+
+// First-visit onboarding. Three short lines, shown once per session (SDK7
+// has no client-side persistent storage; the backend remains the only
+// cross-session truth). Each line stays up ONBOARDING.lineMs, then the next.
+export const ONBOARDING = {
+  enabled: true,
+  lines: ['THIS WORLD REMEMBERS.', "Everything you leave behind becomes part of its story.", 'Help the Memory Tree grow.'],
+  lineMs: 2200,
+  fadeMs: 400
+}
+
+// The three visual zones. The tree plaza is warm, the garden is green and
+// peaceful, the stone discovery area is darker and mysterious. Each zone
+// gets a subtle ground disc so entering it reads without any UI.
+export const ZONES = {
+  // plaza already has its cylinder; the garden and stone zones get tinted
+  // ground discs so the mood shift is visible underfoot
+  garden: {
+    position: { x: 8, z: 15 },
+    radius: 6,
+    tint: Color4.fromHexString('#4d7a44cc')
+  },
+  stone: {
+    position: { x: 26, z: 26 },
+    radius: 5.5,
+    tint: Color4.fromHexString('#2a2733dd')
+  }
+}
+
+// Extra spawn-to-plaza path stones (the existing three stepping stones are
+// kept). These extend the route from the spawn corner toward the tree so the
+// tree is the first visual destination.
+export const PATH_EXT = [
+  { x: 8.2, z: 8.2 },
+  { x: 10.9, z: 10.9 },
+  { x: 13.4, z: 13.4 }
+]
+
+// Low stone border around the plaza, ring segments.
+export const PLAZA_BORDER = {
+  radius: 8.9,
+  segments: 16
+}
+
+// Benches: two lightweight resting spots at the plaza edge.
+export const BENCHES = [
+  { x: 21.2, z: 14.4, rotation: 220 },
+  { x: 11.4, z: 20.2, rotation: 40 }
+]
+
+// Glowing trail plants: a few small emissive markers that lead the eye from
+// the garden toward each Memory Stone. Environmental storytelling, no arrows.
+export const TRAILS = [
+  // toward garden stone (6.8, 22.8)
+  { x: 8.6, z: 19.4 },
+  { x: 7.2, z: 21.2 },
+  // toward ridge stone (26.2, 26.2)
+  { x: 22.6, z: 22.6 },
+  { x: 24.6, z: 24.6 }
+]

@@ -11,6 +11,8 @@ import { closeStone, leaveMemoryOnStone, myMemoryOn, stoneState } from './stone-
 import { reactionInfo } from './http-provider'
 import { startStonePulse } from './stones'
 import { REACTIONS, type ReactionId } from '../shared/stones'
+import { currentOnboardingLine } from './onboarding'
+import { ritualState } from './ritual'
 
 export function setupUi() {
   ReactEcsRenderer.setUiRenderer(uiComponent)
@@ -78,6 +80,18 @@ const uiComponent = () => {
   const saving = stoneState.saving
   const detail = stoneState.selected ? stoneState.details[stoneState.selected] : null
   const myMemory = stoneState.selected ? myMemoryOn(stoneState.selected) : null
+
+  // ritual banner: the world remembers, all by itself
+  const ritualPhase = ritualState.phase
+  const ritualText =
+    ritualPhase === 'quiet'
+      ? 'THE WORLD IS REMEMBERING...'
+      : ritualPhase === 'complete'
+        ? 'THE WORLD REMEMBERS.'
+        : null
+
+  // onboarding: first-visit lines, once per session
+  const onboardingLine = currentOnboardingLine()
 
   return (
     <ScreenInsetArea uiTransform={{ width: '100%', height: '100%' }}>
@@ -147,6 +161,37 @@ const uiComponent = () => {
             uiTransform={{ width: 300, height: 76 }}
             onMouseDown={() => contribute()}
           />
+        </UiEntity>
+      )}
+
+      {/* ritual banner + onboarding overlay, centered, above the HUD */}
+      {(ritualText || onboardingLine) && !stoneOpen && (
+        <UiEntity
+          uiTransform={{
+            positionType: 'absolute',
+            position: { top: 120 },
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center'
+          }}
+        >
+          {ritualText && (
+            <UiEntity
+              uiTransform={{ padding: { top: 10, bottom: 10, left: 26, right: 26 } }}
+              uiBackground={{ color: PANEL }}
+            >
+              <Label value={ritualText} fontSize={20} color={GOLD} textAlign="middle-center" />
+            </UiEntity>
+          )}
+          {onboardingLine && !ritualText && (
+            <UiEntity
+              uiTransform={{ padding: { top: 12, bottom: 12, left: 28, right: 28 } }}
+              uiBackground={{ color: Color4.fromHexString('#14100cf2') }}
+            >
+              <Label value={onboardingLine} fontSize={18} color={CREAM} textAlign="middle-center" />
+            </UiEntity>
+          )}
         </UiEntity>
       )}
 
