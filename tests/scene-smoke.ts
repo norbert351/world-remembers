@@ -2,9 +2,11 @@
 // then inspect what the scene actually created. Bundled with esbuild:
 //   esbuild tests/scene-smoke.ts --bundle --platform=node --format=esm \
 //     --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/scene-smoke.mjs
-import { engine, Transform, GltfContainer, MeshRenderer } from '@dcl/sdk/ecs'
+import { engine, Transform, GltfContainer, MeshRenderer, TextShape } from '@dcl/sdk/ecs'
 import { main } from '../src/index'
 import { applyWorldState, stageFor, worldState } from '../src/state'
+import { STONES } from '../src/config'
+import { validateStoneConfig } from '../src/stones'
 
 let failures = 0
 function check(name: string, cond: boolean, extra?: unknown) {
@@ -22,15 +24,21 @@ main()
 let gltfCount = 0
 let meshCount = 0
 let total = 0
+let textCount = 0
 for (const [entity] of engine.getEntitiesWith(Transform)) {
   total++
   if (GltfContainer.getOrNull(entity)) gltfCount++
   if (MeshRenderer.getOrNull(entity)) meshCount++
+  if (TextShape.getOrNull(entity)) textCount++
 }
 
-check('59 entities with transforms', total === 59, total)
+// Phase C baseline was 59/32/25. Phase D adds 3 stones x 9 entities
+// (root + body + rune + ring + label + rig + 3 motes): 86 total, no new
+// GLBs (32), 43 mesh renderers, 3 text labels.
+check('86 entities with transforms', total === 86, total)
 check('32 gltf entities', gltfCount === 32, gltfCount)
-check('25 mesh entities', meshCount === 25, meshCount)
+check('43 mesh entities', meshCount === 43, meshCount)
+check('3 text labels (one per stone)', textCount === 3, textCount)
 
 // key placements from the design
 const positions: string[] = []
@@ -41,6 +49,18 @@ check('ground at 16,-0.1,16', positions.includes('16.0,-0.1,16.0'))
 check('plaza at 16,0,16', positions.includes('16.0,0.0,16.0'))
 check('tree at 16,0.66,16', positions.includes('16.0,0.7,16.0'))
 check('heart at 16,5,16', positions.includes('16.0,5.0,16.0'))
+
+// every configured stone is placed and matches a shared stone id
+check('stone config ids all valid', validateStoneConfig())
+for (const s of STONES) {
+  const key = `${s.position.x.toFixed(1)},${s.position.y.toFixed(1)},${s.position.z.toFixed(1)}`
+  check(`stone ${s.id} placed at ${key}`, positions.includes(key), key)
+}
+// stones stay inside the 32x32 world and off the plaza center
+for (const s of STONES) {
+  const inBounds = s.position.x >= 0 && s.position.x <= 32 && s.position.z >= 0 && s.position.z <= 32
+  check(`stone ${s.id} in bounds`, inBounds)
+}
 
 // state machine through the single apply path
 applyWorldState(0)

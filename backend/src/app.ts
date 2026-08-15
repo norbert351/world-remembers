@@ -4,7 +4,15 @@ import cors from 'cors'
 import express, { NextFunction, Request, Response } from 'express'
 import type { Pool } from 'pg'
 import { stageFor } from '../../shared/world-state'
-import { countContributions, insertContribution } from './db'
+import { isReactionId, isStoneId } from '../../shared/stones'
+import {
+  countContributions,
+  getPlayerMemory,
+  getStoneMemories,
+  insertContribution,
+  insertStoneMemory,
+  listStones
+} from './db'
 
 // DCL player ids are eth addresses: 0x + 40 hex chars. No wallet prompts,
 // the explorer exposes the session identity without any user action.
@@ -26,6 +34,28 @@ function parsePlayerId(body: unknown): { playerId: string } | { error: string } 
     return { error: 'playerId must be a valid 0x Ethereum address' }
   }
   return { playerId: raw.toLowerCase() }
+}
+
+// Memory submission body: exactly { playerId, reaction }. Both fields are
+// required, the reaction must be on the fixed whitelist, and no other
+// fields are accepted.
+function parseMemoryBody(body: unknown): { playerId: string; reaction: string } | { error: string } {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return { error: 'body must be a JSON object' }
+  }
+  const keys = Object.keys(body)
+  if (keys.length === 0) return { error: 'playerId and reaction are required' }
+  if (keys.some((k) => k !== 'playerId' && k !== 'reaction')) {
+    return { error: 'unexpected fields are not allowed' }
+  }
+  const raw = body as Record<string, unknown>
+  if (typeof raw.playerId !== 'string' || !PLAYER_ID_RE.test(raw.playerId)) {
+    return { error: 'playerId must be a valid 0x Ethereum address' }
+  }
+  if (!isReactionId(raw.reaction)) {
+    return { error: 'reaction must be one of: found, beautiful, return, someone' }
+  }
+  return { playerId: raw.playerId.toLowerCase(), reaction: raw.reaction }
 }
 
 export function createApp(pool: Pool) {
@@ -73,6 +103,77 @@ export function createApp(pool: Pool) {
       const contributions = await insertContribution(pool, parsed.playerId)
       res.json({ success: true, contributions, stage: stageFor(contributions) })
     } catch {
+      res.status(500).json({ success: false, error: 'internal_error' })
+    }
+  })
+
+  // --- Memory Stones -------------------------------------------------------
+
+  // All stones with their memory counts. The scene needs every stone even
+  // when some have no memories yet, to place the in-world labels.
+  app.get('/stones', async (_req: Request, res: Response) => {
+    try {
+      const stones = await listStones(pool)
+      res.json({ stones })
+    } catch {
+      res.status(500).json({ error: 'internal_error' })
+    }
+  })
+
+  // One stone: summary + full memory history, newest first.
+  app.get('/stones/:stoneId', async (req: Request, res: Response) => {
+    const stoneId = req.params.stoneId
+    if (!isStoneId(stoneId)) {
+      res.status(404).json({ error: 'unknown_stone' })
+      return
+    }
+    try {
+      const [stone] = (await listStones(pool)).filter((s) => s.id === stoneId)
+      const memories = await getStoneMemories(pool, stoneId)
+      res.json({ stone, memories })
+    } catch {
+      res.status(500).json({ error: 'internal_error' })
+    }
+  })
+
+  // Leave one memory on a stone. Body: { playerId, reaction }.
+  // Exactly one memory per player per stone, enforced by the UNIQUE
+  // constraint; a duplicate gets a 409 with the existing memory so the
+  // client can show "you already left a memory here".
+  app.post('/stones/:stoneId/memories', async (req: Request, res: Response) => {
+    const stoneId = req.params.stoneId
+    if (!isStoneId(stoneId)) {
+      res.status(404).json({ error: 'unknown_stone' })
+      return
+    }
+    const parsed = parseMemoryBody(req.body)
+    if ('error' in parsed) {
+      res.status(400).json({ success: false, error: parsed.error })
+      return
+    }
+    const { playerId, reaction } = parsed
+    try {
+      await insertStoneMemory(pool, stoneId, playerId, reaction)
+      const memories = await getStoneMemories(pool, stoneId)
+      res.status(201).json({
+        success: true,
+        stoneId,
+        playerId,
+        reaction,
+        memoryCount: memories.length,
+        memories
+      })
+    } catch (err) {
+      if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23505') {
+        // unique violation: this player already left a memory on this stone
+        const existing = await getPlayerMemory(pool, stoneId, playerId)
+        res.status(409).json({
+          success: false,
+          error: 'already_left_memory',
+          memory: existing
+        })
+        return
+      }
       res.status(500).json({ success: false, error: 'internal_error' })
     }
   })

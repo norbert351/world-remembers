@@ -71,8 +71,36 @@ export const COLORS = {
 }
 
 // World API endpoint. One place, used by the HTTP provider only.
-// Local dev default. For the deployed world this must be an HTTPS URL
-// reachable from the Decentraland client (see README).
+// Currently a Cloudflare tunnel URL: the VM's LAN IP is unreachable from
+// the phone, and the scene runtime has no location global to derive a host.
+// For the deployed world this must be an HTTPS URL reachable from the
+// Decentraland client (see README).
 export const API = {
-  baseUrl: 'http://127.0.0.1:3002'
+  baseUrl: 'https://dpi-blast-carey-looked.trycloudflare.com'
 }
+
+// Memory Stones: id must match shared/stones.ts STONES. Position is the
+// stone root in scene space (32x32 world), rotation faces it toward the
+// plaza. Placements checked against existing props (bushes, ferns, lanterns,
+// boulders, path stones) with at least ~3m clearance. The rune color
+// distinguishes each stone at a glance.
+export const STONES = [
+  {
+    id: 'garden',
+    position: { x: 6.8, y: 0, z: 22.8 },
+    rotation: 210,
+    runeColor: Color3.fromHexString('#9fd8ff')
+  },
+  {
+    id: 'tree',
+    position: { x: 19.5, y: 0, z: 14.5 },
+    rotation: 315,
+    runeColor: Color3.fromHexString('#b9a4ff')
+  },
+  {
+    id: 'ridge',
+    position: { x: 26.2, y: 0, z: 26.2 },
+    rotation: 45,
+    runeColor: Color3.fromHexString('#ffd9a0')
+  }
+] as const
