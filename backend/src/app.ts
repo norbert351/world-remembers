@@ -5,8 +5,10 @@ import express, { NextFunction, Request, Response } from 'express'
 import type { Pool } from 'pg'
 import { stageFor } from '../../shared/world-state'
 import { isReactionId, isStoneId } from '../../shared/stones'
+import { MISSION } from '../../shared/mission'
 import {
   countContributions,
+  countMissionProgress,
   getPlayerMemory,
   getStoneMemories,
   insertContribution,
@@ -58,6 +60,22 @@ function parseMemoryBody(body: unknown): { playerId: string; reaction: string } 
   return { playerId: raw.playerId.toLowerCase(), reaction: raw.reaction }
 }
 
+// Mission payload builder. Progress is derived server-side from the
+// persistent participant tables; the client only ever reads this.
+async function missionPayload(pool: Pool): Promise<{ mission: Record<string, unknown> }> {
+  const progress = await countMissionProgress(pool)
+  return {
+    mission: {
+      id: MISSION.id,
+      title: MISSION.title,
+      description: MISSION.description,
+      progress,
+      target: MISSION.target,
+      completed: progress >= MISSION.target
+    }
+  }
+}
+
 export function createApp(pool: Pool) {
   const app = express()
   app.disable('x-powered-by')
@@ -92,7 +110,8 @@ export function createApp(pool: Pool) {
   })
 
   // One contribution. The server decides validity; clients can never
-  // submit a count or any other field.
+  // submit a count or any other field. Mission progress is recalculated
+  // server-side and returned with the same response.
   app.post('/contribute', async (req: Request, res: Response) => {
     const parsed = parsePlayerId(req.body)
     if ('error' in parsed) {
@@ -101,9 +120,20 @@ export function createApp(pool: Pool) {
     }
     try {
       const contributions = await insertContribution(pool, parsed.playerId)
-      res.json({ success: true, contributions, stage: stageFor(contributions) })
+      const mission = await missionPayload(pool)
+      res.json({ success: true, contributions, stage: stageFor(contributions), ...mission })
     } catch {
       res.status(500).json({ success: false, error: 'internal_error' })
+    }
+  })
+
+  // Active mission: id, copy and server-derived progress.
+  app.get('/mission', async (_req: Request, res: Response) => {
+    try {
+      const mission = await missionPayload(pool)
+      res.json(mission)
+    } catch {
+      res.status(500).json({ error: 'internal_error' })
     }
   })
 
@@ -155,13 +185,15 @@ export function createApp(pool: Pool) {
     try {
       await insertStoneMemory(pool, stoneId, playerId, reaction)
       const memories = await getStoneMemories(pool, stoneId)
+      const mission = await missionPayload(pool)
       res.status(201).json({
         success: true,
         stoneId,
         playerId,
         reaction,
         memoryCount: memories.length,
-        memories
+        memories,
+        ...mission
       })
     } catch (err) {
       if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23505') {

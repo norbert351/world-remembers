@@ -41,6 +41,13 @@ export const contributionState = {
   lastErrorAt: 0
 }
 
+// Session-local evidence of participation: set only after the server
+// confirms a contribution. Feeds the mission panel's checkmark.
+let contributedThisSession = false
+export function playerContributedFlag(): boolean {
+  return contributedThisSession
+}
+
 // Identity comes from the DCL session, injectable for tests.
 let identityResolver: () => string | null = getPlayerIdentity
 export function setIdentityResolver(fn: () => string | null): void {
@@ -91,6 +98,7 @@ export async function contributeToWorld(): Promise<boolean> {
     applyWorldState(count)
     worldState.lastContributionAt = Date.now()
     contributionState.status = 'success'
+    contributedThisSession = true
     worldState.version++
     return true
   } catch {

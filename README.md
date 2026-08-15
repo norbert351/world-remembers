@@ -3,6 +3,26 @@
 A persistent social garden for the Decentraland Friendzone Mobile Buildathon.
 Every tap helps the Memory Tree grow, and the world remembers who was here.
 
+## Milestone 4: Mission + contextual interaction (Phase E)
+
+The world now answers "what am I supposed to do?" within seconds.
+
+**TODAY'S MEMORY — RESTORE THE FORGOTTEN GARDEN.** A community mission:
+100 distinct players (one per player, derived server-side from the union of
+contributions and stone memories) restore the garden. Progress is
+server-authoritative: `GET /mission`, and every `POST /contribute` and
+stone-memory response carries the updated mission payload in the same
+round trip. When progress hits the target the garden blooms: a daisy ring
+and warm glow appear around the tree and persist across reloads.
+
+**Contextual interaction.** The permanent "HELP THE TREE GROW" button is
+gone. One CTA appears only when the player is near an interactive object:
+`HELP THE TREE GROW` near the tree (6m radius), `LEAVE A MEMORY` near a
+stone (4.5m). Priority: mission objective > tree > stone, nearest wins
+within a priority. A 0.5s proximity tick drives it — never per-frame.
+Mission panel is compact, collapsible to a `TODAY'S MEMORY 12/100` chip,
+and shows the player's own confirmed participation.
+
 ## Milestone 3: World polish + Memory Moment (Phase E)
 
 Three visual zones give the world one story: a warm Tree Plaza, a green
@@ -223,7 +243,8 @@ Environment variables:
 |---|---|---|---|---|
 | GET | `/health` | - | `200 {"status":"ok","db":"up"}` | `503 {"status":"degraded","db":"down"}` |
 | GET | `/world` | - | `200 {"contributions":N,"stage":"AWAKENED"}` | `500 {"error":"internal_error"}` |
-| POST | `/contribute` | `{"playerId":"0x…40 hex…"}` | `200 {"success":true,"contributions":N,"stage":"…"}` | `400` invalid body/identity/extra fields, `413` too large, `500` db failure |
+| POST | `/contribute` | `{"playerId":"0x…40 hex…"}` | `200 {"success":true,"contributions":N,"stage":"…","mission":{…}}` | `400` invalid body/identity/extra fields, `413` too large, `500` db failure |
+| GET | `/mission` | - | `200 {"mission":{"id":"restore-forgotten-garden","title":"…","description":"…","progress":N,"target":100,"completed":bool}}` | `500 {"error":"internal_error"}` |
 | GET | `/stones` | - | `200 {"stones":[{"id":"garden","memoryCount":N},…]}` | `500 {"error":"internal_error"}` |
 | GET | `/stones/:id` | - | `200 {"stone":{"id":"garden","memoryCount":N},"memories":[{"playerId":"0x…","reaction":"found","createdAt":"…"}]}` (newest first) | `404 {"error":"unknown_stone"}`, `500` |
 | POST | `/stones/:id/memories` | `{"playerId":"0x…40 hex…","reaction":"found"}` | `201 {"success":true,"stoneId":"garden","memoryCount":N,"memories":[…]}` | `400` invalid body/identity/reaction/extra fields, `404` unknown stone, `409 {"success":false,"error":"already_left_memory","memory":{…}}` duplicate, `413` too large, `500` db failure |

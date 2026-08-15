@@ -101,3 +101,20 @@ export async function getPlayerMemory(
   const r = rows[0]
   return { playerId: r.player_id, reaction: r.reaction, createdAt: r.created_at.toISOString() }
 }
+
+// --- Mission ---------------------------------------------------------------
+
+// Mission progress, server-authoritative and anti-spam by construction:
+// one DISTINCT player counts once, whether they contributed to the tree or
+// left a stone memory (or both). Derived from existing tables, never
+// stored, so nothing can be client-injected and completion persists.
+export async function countMissionProgress(pool: Pool): Promise<number> {
+  const { rows } = await pool.query<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM (
+       SELECT player_id FROM contributions
+       UNION
+       SELECT player_id FROM stone_memories
+     ) AS participants`
+  )
+  return rows[0].count
+}

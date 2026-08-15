@@ -85,6 +85,13 @@ export function setStoneIdentityResolver(fn?: () => string | null): void {
   identityResolver = fn ?? getPlayerIdentity
 }
 
+// Session-local evidence of participation: stone ids where the server
+// confirmed this player left a memory. Feeds the mission panel.
+const myStoneMemoryIds = new Set<string>()
+export function playerStoneMemoryIds(): string[] {
+  return [...myStoneMemoryIds]
+}
+
 function bump(): void {
   stoneState.version++
 }
@@ -168,6 +175,7 @@ export async function leaveMemoryOnStone(reaction: ReactionId): Promise<boolean>
     stoneState.details[stoneId] = detail
     const summary = stoneState.stones.find((s) => s.id === stoneId)
     if (summary) summary.memoryCount = detail.memoryCount
+    myStoneMemoryIds.add(stoneId)
     stoneState.status = 'success'
     stoneState.lastSavedAt = Date.now()
     bump()

@@ -3,7 +3,9 @@
 // on fetch directly.
 import type { StoneDetail, StoneProvider, StoneSummary } from './stone-state'
 import type { WorldStateProvider } from './state'
+import type { MissionProvider } from './mission'
 import { isReactionId, isStoneId, REACTIONS, type ReactionId } from '../shared/stones'
+import { missionFromServer, type MissionState } from '../shared/mission'
 
 // Parse and validate the /world response. A malformed payload must throw,
 // never corrupt the scene state.
@@ -37,7 +39,11 @@ export function parseContribute(body: unknown): number {
 export class HttpWorldStateProvider implements WorldStateProvider {
   constructor(
     private readonly baseUrl: string,
-    private readonly fetchImpl: typeof fetch = fetch
+    private readonly fetchImpl: typeof fetch = fetch,
+    // optional: receives the mission payload embedded in /contribute
+    // responses, so the scene updates mission progress with the same
+    // round trip (no extra API call)
+    private readonly onMission?: (mission: MissionState | null) => void
   ) {}
 
   async load(): Promise<number> {
@@ -53,8 +59,34 @@ export class HttpWorldStateProvider implements WorldStateProvider {
       body: JSON.stringify({ playerId })
     })
     if (!res.ok) throw new Error(`contribute_http_${res.status}`)
-    return parseContribute(await res.json())
+    const body = await res.json()
+    this.onMission?.(parseEmbeddedMission(body))
+    return parseContribute(body)
   }
+}
+
+// --- Mission ---------------------------------------------------------------
+
+export class HttpMissionProvider implements MissionProvider {
+  constructor(
+    private readonly baseUrl: string,
+    private readonly fetchImpl: typeof fetch = fetch
+  ) {}
+
+  async load(): Promise<MissionState> {
+    const res = await this.fetchImpl(`${this.baseUrl}/mission`)
+    if (!res.ok) throw new Error(`mission_http_${res.status}`)
+    return missionFromServer(await res.json())
+  }
+}
+
+// Parse the optional mission block on /contribute and stone-memory responses.
+// Returns null when absent (older server) — the scene stays playable.
+export function parseEmbeddedMission(body: unknown): MissionState | null {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return null
+  const b = body as Record<string, unknown>
+  if (b.mission === undefined || b.mission === null) return null
+  return missionFromServer(b)
 }
 
 // --- Memory Stones ---------------------------------------------------------
@@ -109,7 +141,9 @@ function parseMemory(m: unknown): { playerId: string; reaction: ReactionId; crea
 export class HttpStoneProvider implements StoneProvider {
   constructor(
     private readonly baseUrl: string,
-    private readonly fetchImpl: typeof fetch = fetch
+    private readonly fetchImpl: typeof fetch = fetch,
+    // optional: receives the mission payload embedded in memory responses
+    private readonly onMission?: (mission: MissionState | null) => void
   ) {}
 
   async listStones(): Promise<StoneSummary[]> {
@@ -136,10 +170,11 @@ export class HttpStoneProvider implements StoneProvider {
       throw new Error('already_left_memory')
     }
     if (!res.ok) throw new Error(`memory_http_${res.status}`)
-    const body = await res.json()
+    const body = (await res.json()) as Record<string, unknown> | null
     if (typeof body !== 'object' || body === null || body.success !== true) {
       throw new Error('bad_memory_response')
     }
+    this.onMission?.(parseEmbeddedMission(body))
     return parseStoneDetail({ stone: { id: stoneId, memoryCount: body.memoryCount }, memories: body.memories })
   }
 }

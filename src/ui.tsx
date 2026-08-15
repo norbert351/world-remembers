@@ -7,12 +7,15 @@ import { Color4 } from '@dcl/sdk/math'
 import { STAGES } from './config'
 import { contributionState, contributeToWorld, stageFor, worldState } from './state'
 import { startPulse } from './tree'
-import { closeStone, leaveMemoryOnStone, myMemoryOn, stoneState } from './stone-state'
+import { closeStone, leaveMemoryOnStone, myMemoryOn, selectStone, stoneState } from './stone-state'
 import { reactionInfo } from './http-provider'
 import { startStonePulse } from './stones'
 import { REACTIONS, type ReactionId } from '../shared/stones'
 import { currentOnboardingLine } from './onboarding'
 import { ritualState } from './ritual'
+import { interactionState } from './interaction'
+import { missionCompleted, missionProgress, missionState, missionTarget, playerHasParticipated } from './mission'
+import { playerStoneMemoryIds } from './stone-state'
 
 export function setupUi() {
   ReactEcsRenderer.setUiRenderer(uiComponent)
@@ -64,6 +67,16 @@ function leaveMemory(reaction: ReactionId) {
 // two-stage flow: [LEAVE YOUR MEMORY] reveals the four reactions, the player
 // picks one, the server confirms. Module-level because uiComponent re-renders.
 let pickerOpen = false
+// mission panel starts open once loaded; collapses to a chip
+let missionPanelCollapsed = false
+
+// the player's own participation summary for the mission panel
+function playerContributedText(): string {
+  const stones = playerStoneMemoryIds()
+  const parts: string[] = []
+  if (stones.length > 0) parts.push(`remembered at stone${stones.length > 1 ? 's' : ''} ${stones.join(', ')}`)
+  return parts.length > 0 ? parts.join(' · ') : 'the world felt your tap'
+}
 
 // --- UI --------------------------------------------------------------------
 
@@ -142,12 +155,129 @@ const uiComponent = () => {
         </UiEntity>
       )}
 
-      {/* bottom: the one-thumb action (tree button) */}
-      {!stoneOpen && (
+      {/* bottom: contextual interaction CTA — one at a time, only when the
+          player is near an interactive object. No permanent button. */}
+      {!stoneOpen && interactionState.target && (
         <UiEntity
           uiTransform={{
             positionType: 'absolute',
             position: { bottom: 24 },
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center'
+          }}
+        >
+          <Button
+            value={submitting ? 'SAVING...' : interactionState.target.label}
+            variant="primary"
+            fontSize={22}
+            uiTransform={{ width: 300, height: 76 }}
+            onMouseDown={() => {
+              const t = interactionState.target
+              if (t && t.type === 'stone') {
+                selectStone(t.id)
+              } else {
+                contribute()
+              }
+            }}
+          />
+          <Label
+            value={interactionState.target.hint}
+            fontSize={13}
+            color={CREAM}
+            textAlign="middle-center"
+            uiTransform={{ margin: { top: 4 } }}
+          />
+        </UiEntity>
+      )}
+
+      {/* Mission panel: compact, collapsible, anchored under the counter so
+          the bottom of the screen stays free for the contextual CTA. */}
+      {!stoneOpen && missionState.mission && !missionPanelCollapsed && (
+        <UiEntity
+          uiTransform={{
+            positionType: 'absolute',
+            position: { top: 150 },
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'row',
+            justifyContent: 'center'
+          }}
+        >
+          <UiEntity
+            uiTransform={{
+              width: 320,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'stretch',
+              padding: { top: 12, bottom: 12, left: 14, right: 14 }
+            }}
+            uiBackground={{ color: PANEL }}
+          >
+            <UiEntity uiTransform={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+              <Label value="TODAY'S MEMORY" fontSize={13} color={GOLD} textAlign="middle-left" />
+              <UiEntity uiTransform={{ flexGrow: 1 }} />
+              <Button
+                value="−"
+                variant="secondary"
+                fontSize={16}
+                uiTransform={{ width: 36, height: 36 }}
+                onMouseDown={() => (missionPanelCollapsed = true)}
+              />
+            </UiEntity>
+            <Label
+              value={missionCompleted() ? 'THE FORGOTTEN GARDEN HAS BEEN RESTORED.' : missionState.mission.title}
+              fontSize={16}
+              color={Color4.White()}
+              textAlign="middle-left"
+            />
+            {!missionCompleted() && (
+              <Label value={missionState.mission.description} fontSize={11} color={CREAM} textAlign="middle-left" textWrap="wrap" />
+            )}
+            <Label
+              value={`COMMUNITY PROGRESS  ${missionProgress()} / ${missionTarget()}`}
+              fontSize={13}
+              color={GOLD}
+              textAlign="middle-left"
+            />
+            {/* progress bar */}
+            <UiEntity
+              uiTransform={{ width: '100%', height: 10, margin: { top: 6, bottom: 6 } }}
+              uiBackground={{ color: Color4.fromHexString('#00000066') }}
+            >
+              <UiEntity
+                uiTransform={{
+                  width: `${Math.min(100, (missionProgress() / missionTarget()) * 100)}%`,
+                  height: '100%'
+                }}
+                uiBackground={{ color: GOLD }}
+              />
+            </UiEntity>
+            {/* the player's own contribution to the mission */}
+            <Label
+              value={
+                playerHasParticipated()
+                  ? `✓ YOU HELPED: ${playerContributedText()}`
+                  : missionCompleted()
+                    ? 'This garden was restored by the community.'
+                    : 'Help the world remember: approach the Memory Tree.'
+              }
+              fontSize={12}
+              color={CREAM}
+              textAlign="middle-left"
+              textWrap="wrap"
+            />
+          </UiEntity>
+        </UiEntity>
+      )}
+
+      {/* collapsed mission chip: one thumb tap reopens */}
+      {!stoneOpen && missionState.mission && missionPanelCollapsed && (
+        <UiEntity
+          uiTransform={{
+            positionType: 'absolute',
+            position: { top: 150 },
             width: '100%',
             display: 'flex',
             flexDirection: 'row',
@@ -155,11 +285,11 @@ const uiComponent = () => {
           }}
         >
           <Button
-            value={submitting ? 'SAVING...' : 'HELP THE TREE GROW'}
-            variant="primary"
-            fontSize={22}
-            uiTransform={{ width: 300, height: 76 }}
-            onMouseDown={() => contribute()}
+            value={`TODAY'S MEMORY  ${missionProgress()} / ${missionTarget()}`}
+            variant="secondary"
+            fontSize={15}
+            uiTransform={{ width: 260, height: 44 }}
+            onMouseDown={() => (missionPanelCollapsed = false)}
           />
         </UiEntity>
       )}
