@@ -5,8 +5,8 @@ import { engine, SkyboxTime } from '@dcl/sdk/ecs'
 import { getPlayer } from '@dcl/sdk/players'
 import { setupGarden } from './garden'
 import { API, STAGES } from './config'
-import { HttpMissionProvider, HttpStoneProvider } from './http-provider'
-import { HttpWorldStateProvider } from './http-provider'
+import { getPlayerIdentity } from './identity'
+import { HttpExpeditionProvider, HttpMissionProvider, HttpStoneProvider, HttpWorldStateProvider } from './http-provider'
 import { loadWorldState, playerContributedFlag, setStateListener, worldState } from './state'
 import { loadStones, playerStoneMemoryIds, setStoneIdentityResolver, stoneState } from './stone-state'
 import { refreshStoneLabels, setupStones, stonePulseSystem, validateStoneConfig } from './stones'
@@ -32,9 +32,32 @@ import {
   setMissionIdentityResolver,
   setStoneMemoriesOf
 } from './mission'
-import { buildTargets, clearInteraction, interactionState, updateInteraction } from './interaction'
+import {
+  addExpeditionTarget,
+  buildTargets,
+  clearInteraction,
+  clearExpeditionTargets,
+  interactionState,
+  updateInteraction,
+  EXPEDITION_INTERACTION_RADIUS
+} from './interaction'
 import { bloomSystem, syncMissionCompletion } from './mission-complete'
+import {
+  createExpeditionSite,
+  expeditionVisualSystem,
+  setFragmentIdentityResolver,
+  syncExpeditionSites
+} from './fragments'
+import {
+  expeditionFragments,
+  expeditionIsCollected,
+  expeditionState,
+  loadExpedition,
+  setExpeditionIdentityResolver
+} from './expedition'
+import { resetRestoration, restorationSystem, restorationWaveSystem } from './restoration'
 import type { MissionState } from '../shared/mission'
+import { FRAGMENT_LOCATIONS } from '../shared/expedition'
 
 export function main() {
   // fixed skybox so every visitor sees the stage mood consistently
@@ -54,9 +77,12 @@ export function main() {
     if (m) applyMissionPayload(m)
   })
   missionState.provider = new HttpMissionProvider(API.baseUrl)
+  expeditionState.provider = new HttpExpeditionProvider(API.baseUrl, getPlayerIdentity)
   // stones and mission use the same DCL session identity as contributions
   setStoneIdentityResolver()
   setMissionIdentityResolver()
+  setExpeditionIdentityResolver()
+  setFragmentIdentityResolver(getPlayerIdentity)
 
   // wire session-local participation evidence into the mission panel
   setContributedFlag(playerContributedFlag)
@@ -83,12 +109,16 @@ export function main() {
   })
 
   // event-driven systems only: pulse, mote orbit, stone pulse, ritual,
-  // mission bloom, and the low-frequency proximity check (0.5s tick)
+  // mission bloom, expedition visuals, restoration, and the low-frequency
+  // proximity check (0.5s tick)
   engine.addSystem(pulseSystem)
   engine.addSystem(moteOrbitSystem)
   engine.addSystem(stonePulseSystem)
   engine.addSystem(ritualVisualSystem)
   engine.addSystem(bloomSystem)
+  engine.addSystem(expeditionVisualSystem)
+  engine.addSystem(restorationSystem)
+  engine.addSystem(restorationWaveSystem)
   engine.addSystem((dt) => tickRitual(dt))
   engine.addSystem((dt) => tickOnboarding(dt))
   engine.addSystem(proximitySystem)
@@ -98,6 +128,11 @@ export function main() {
   void loadStones().then(() => refreshStoneLabels())
   void loadMission().then(() => {
     syncMissionCompletion()
+    refreshInteraction()
+  })
+  // expedition: spawn today's sites, then sync them against server state
+  void loadExpedition().then(() => {
+    setupExpeditionSites()
     refreshInteraction()
   })
 
@@ -110,6 +145,46 @@ export function main() {
 // The interaction target list is rebuilt when mission state changes, so the
 // tree gets mission priority while the mission is active and uncompleted.
 let interactionTargets = buildTargets({ missionActive: true, missionCompleted: false })
+
+// Spawn today's expedition sites (guardians + hidden fragments) and add
+// them to the interaction manager. Called once the expedition loads.
+function setupExpeditionSites(): void {
+  clearExpeditionTargets()
+  for (const f of expeditionFragments()) {
+    const rig = createExpeditionSite(f.id)
+    const collected = expeditionIsCollected(f.id)
+    if (collected) {
+      // already collected today: dissolve immediately (server says so)
+      if (rig.guardian) engine.removeEntity(rig.guardian)
+      rig.guardian = null
+      if (rig.fragment) engine.removeEntity(rig.fragment)
+      rig.fragment = null
+      rig.collected = true
+    } else {
+      // the guardian is the current objective; the fragment becomes the
+      // target once the guardian is cleared
+      const loc = FRAGMENT_LOCATIONS[f.id]
+      addExpeditionTarget({
+        id: `guardian-${f.id}`,
+        type: 'guardian',
+        position: { x: loc.x, z: loc.z },
+        radius: EXPEDITION_INTERACTION_RADIUS,
+        label: 'DISPEL',
+        hint: `${expeditionHitsLabel(f.id)} — 3 hits to clear`,
+        priority: 1,
+        enabled: true
+      })
+    }
+  }
+  syncExpeditionSites()
+  refreshInteraction()
+}
+
+// short hit label: "2 / 3 MEMORY ENERGY"
+function expeditionHitsLabel(id: string): string {
+  const hits = expeditionFragments().find((f) => f.id === id)?.hits ?? 0
+  return `${hits} / 3`
+}
 
 function refreshInteraction(): void {
   interactionTargets = buildTargets({

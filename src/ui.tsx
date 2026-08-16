@@ -16,6 +16,18 @@ import { ritualState } from './ritual'
 import { interactionState } from './interaction'
 import { missionCompleted, missionProgress, missionState, missionTarget, playerHasParticipated } from './mission'
 import { playerStoneMemoryIds } from './stone-state'
+import {
+  collectFragment as collectExpeditionFragment,
+  completeExpedition,
+  dispelGuardian,
+  expeditionCollectedCount,
+  expeditionCompleted,
+  expeditionFragments,
+  expeditionState,
+  expeditionTodayCompletions
+} from './expedition'
+import { FRAGMENT_LOCATIONS, type ExpeditionFragmentId } from '../shared/expedition'
+import { startRestoration } from './restoration'
 
 export function setupUi() {
   ReactEcsRenderer.setUiRenderer(uiComponent)
@@ -69,6 +81,11 @@ function leaveMemory(reaction: ReactionId) {
 let pickerOpen = false
 // mission panel starts open once loaded; collapses to a chip
 let missionPanelCollapsed = false
+// expedition card starts open once loaded; collapses to a chip
+let expeditionPanelCollapsed = false
+// fires the restoration ritual exactly once per completion
+let restorationTriggered = false
+let lastSeenCompleted = false
 
 // the player's own participation summary for the mission panel
 function playerContributedText(): string {
@@ -105,6 +122,18 @@ const uiComponent = () => {
 
   // onboarding: first-visit lines, once per session
   const onboardingLine = currentOnboardingLine()
+
+  // restoration: when the server confirms completion, fly the fragments in
+  // and let the world respond — once
+  const completedNow = expeditionState.state?.completed ?? false
+  if (completedNow && !lastSeenCompleted) {
+    lastSeenCompleted = true
+    if (!restorationTriggered) {
+      restorationTriggered = true
+      const positions = expeditionFragments().map((f) => FRAGMENT_LOCATIONS[f.id])
+      startRestoration(positions)
+    }
+  }
 
   return (
     <ScreenInsetArea uiTransform={{ width: '100%', height: '100%' }}>
@@ -175,8 +204,17 @@ const uiComponent = () => {
             uiTransform={{ width: 300, height: 76 }}
             onMouseDown={() => {
               const t = interactionState.target
-              if (t && t.type === 'stone') {
+              if (!t) return
+              if (t.type === 'stone') {
                 selectStone(t.id)
+              } else if (t.type === 'guardian') {
+                void dispelGuardian(t.id as ExpeditionFragmentId)
+              } else if (t.type === 'fragment') {
+                void collectExpeditionFragment(t.id as ExpeditionFragmentId)
+              } else if (t.type === 'tree' && expeditionState.state?.completed && !restorationTriggered) {
+                // all memories returned: restore the world
+                restorationTriggered = true
+                void completeExpedition()
               } else {
                 contribute()
               }
@@ -188,6 +226,103 @@ const uiComponent = () => {
             color={CREAM}
             textAlign="middle-center"
             uiTransform={{ margin: { top: 4 } }}
+          />
+        </UiEntity>
+      )}
+
+      {/* Expedition card: the daily objective. Shows after it loads,
+          collapsible like the mission card. */}
+      {!stoneOpen && expeditionState.state && !expeditionPanelCollapsed && (
+        <UiEntity
+          uiTransform={{
+            positionType: 'absolute',
+            position: { top: 96 },
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'row',
+            justifyContent: 'center'
+          }}
+        >
+          <UiEntity
+            uiTransform={{
+              width: 320,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'stretch',
+              padding: { top: 10, bottom: 10, left: 14, right: 14 }
+            }}
+            uiBackground={{ color: PANEL }}
+          >
+            <UiEntity uiTransform={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+              <Label value="TODAY'S MEMORY EXPEDITION" fontSize={13} color={GOLD} textAlign="middle-left" />
+              <UiEntity uiTransform={{ flexGrow: 1 }} />
+              <Button
+                value="−"
+                variant="secondary"
+                fontSize={16}
+                uiTransform={{ width: 36, height: 36 }}
+                onMouseDown={() => (expeditionPanelCollapsed = true)}
+              />
+            </UiEntity>
+            <Label
+              value={expeditionCompleted() ? 'ALL MEMORIES RECOVERED' : 'Recover the lost memories'}
+              fontSize={16}
+              color={Color4.White()}
+              textAlign="middle-left"
+            />
+            {/* dots ● ● ○ */}
+            <UiEntity uiTransform={{ display: 'flex', flexDirection: 'row', margin: { top: 6, bottom: 6 } }}>
+              {expeditionFragments().map((f) => (
+                <Label
+                  key={f.id}
+                  value={f.collected ? '●' : '○'}
+                  fontSize={22}
+                  color={f.collected ? GOLD : CREAM}
+                  textAlign="middle-left"
+                  uiTransform={{ margin: { right: 8 } }}
+                />
+              ))}
+              <Label
+                value={`${expeditionCollectedCount()} / 3`}
+                fontSize={14}
+                color={GOLD}
+                textAlign="middle-left"
+                uiTransform={{ margin: { left: 4 } }}
+              />
+            </UiEntity>
+            <Label
+              value={
+                expeditionCompleted()
+                  ? `You restored the garden. ${expeditionTodayCompletions()} ${expeditionTodayCompletions() === 1 ? 'explorer' : 'explorers'} today.`
+                  : 'Find the fragments. Return them to the Tree.'
+              }
+              fontSize={12}
+              color={CREAM}
+              textAlign="middle-left"
+              textWrap="wrap"
+            />
+          </UiEntity>
+        </UiEntity>
+      )}
+
+      {/* collapsed expedition chip */}
+      {!stoneOpen && expeditionState.state && expeditionPanelCollapsed && (
+        <UiEntity
+          uiTransform={{
+            positionType: 'absolute',
+            position: { top: 96 },
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'row',
+            justifyContent: 'center'
+          }}
+        >
+          <Button
+            value={`EXPEDITION  ${'●'.repeat(expeditionCollectedCount())}${'○'.repeat(3 - expeditionCollectedCount())}  ${expeditionCollectedCount()}/3`}
+            variant="secondary"
+            fontSize={15}
+            uiTransform={{ width: 260, height: 44 }}
+            onMouseDown={() => (expeditionPanelCollapsed = false)}
           />
         </UiEntity>
       )}

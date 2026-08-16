@@ -4,8 +4,10 @@
 import type { StoneDetail, StoneProvider, StoneSummary } from './stone-state'
 import type { WorldStateProvider } from './state'
 import type { MissionProvider } from './mission'
+import type { ExpeditionProvider } from './expedition'
 import { isReactionId, isStoneId, REACTIONS, type ReactionId } from '../shared/stones'
 import { missionFromServer, type MissionState } from '../shared/mission'
+import { expeditionFromServer, type ExpeditionFragmentId, type ExpeditionState } from '../shared/expedition'
 
 // Parse and validate the /world response. A malformed payload must throw,
 // never corrupt the scene state.
@@ -87,6 +89,59 @@ export function parseEmbeddedMission(body: unknown): MissionState | null {
   const b = body as Record<string, unknown>
   if (b.mission === undefined || b.mission === null) return null
   return missionFromServer(b)
+}
+
+// --- Expedition -------------------------------------------------------------
+
+export class HttpExpeditionProvider implements ExpeditionProvider {
+  constructor(
+    private readonly baseUrl: string,
+    private readonly playerId: () => string | null,
+    private readonly fetchImpl: typeof fetch = fetch
+  ) {}
+
+  private auth(): string {
+    const id = this.playerId()
+    if (!id) throw new Error('no_identity')
+    return id
+  }
+
+  async load(): Promise<ExpeditionState> {
+    const id = this.auth()
+    const res = await this.fetchImpl(`${this.baseUrl}/expedition?playerId=${encodeURIComponent(id)}`)
+    if (!res.ok) throw new Error(`expedition_http_${res.status}`)
+    return expeditionFromServer(await res.json())
+  }
+
+  private async action(path: string, fragmentId?: ExpeditionFragmentId): Promise<ExpeditionState> {
+    const id = this.auth()
+    const body: Record<string, string> = { playerId: id }
+    if (fragmentId) body.fragmentId = fragmentId
+    const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+    if (!res.ok) throw new Error(`expedition_http_${res.status}`)
+    // the server returns a partial ack for dispel/collect (no full state);
+    // re-fetch the authoritative state
+    return this.load()
+  }
+
+  async dispel(fragmentId: ExpeditionFragmentId): Promise<ExpeditionState> {
+    await this.action('/expedition/dispel', fragmentId)
+    return this.load()
+  }
+
+  async collect(fragmentId: ExpeditionFragmentId): Promise<ExpeditionState> {
+    await this.action('/expedition/collect', fragmentId)
+    return this.load()
+  }
+
+  async complete(): Promise<ExpeditionState> {
+    await this.action('/expedition/complete')
+    return this.load()
+  }
 }
 
 // --- Memory Stones ---------------------------------------------------------

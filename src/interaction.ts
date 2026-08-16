@@ -11,7 +11,7 @@
 import { TREE } from './config'
 import { STONES } from './config'
 
-export type InteractionType = 'mission' | 'tree' | 'stone'
+export type InteractionType = 'mission' | 'tree' | 'stone' | 'guardian' | 'fragment'
 
 export interface InteractionTarget {
   id: string
@@ -43,6 +43,20 @@ export const interactionState: InteractionState = {
 // stones a tighter one (tapping them is a deliberate act).
 export const TREE_INTERACTION_RADIUS = 6
 export const STONE_INTERACTION_RADIUS = 4.5
+export const EXPEDITION_INTERACTION_RADIUS = 5
+
+// Expedition sites are added by the scene after the expedition loads:
+// guardians (priority 1, the active objective) and revealed fragments
+// (priority 1 too — both are "the current mission objective").
+export function addExpeditionTarget(target: InteractionTarget): void {
+  extraTargets.push(target)
+}
+
+export function clearExpeditionTargets(): void {
+  extraTargets.length = 0
+}
+
+const extraTargets: InteractionTarget[] = []
 
 // Builds the target list once. Mission objective (the tree) is enabled only
 // while the mission is active and not completed; the tree itself stays
@@ -71,6 +85,11 @@ export function buildTargets(opts: { missionActive: boolean; missionCompleted: b
       priority: 3,
       enabled: true
     })
+  }
+  // expedition sites sit at priority 1 while active: dispelling a guardian
+  // or collecting a revealed fragment is the current objective
+  for (const t of extraTargets) {
+    targets.push(t)
   }
   return targets
 }

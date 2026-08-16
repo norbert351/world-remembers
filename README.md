@@ -3,6 +3,34 @@
 A persistent social garden for the Decentraland Friendzone Mobile Buildathon.
 Every tap helps the Memory Tree grow, and the world remembers who was here.
 
+## Milestone 5: The Memory Expedition
+
+The daily objective: **find the lost Memory Fragments, overcome the Echo
+Guardians protecting them, and return the fragments to the Memory Tree.**
+
+- **Deterministic daily route.** The day seed (`FNV-1a(date + worldId)`)
+  picks 3 fragment spawn points from 10 predefined safe locations across
+  three zones (garden, lighthouse side, memory area). The route changes
+  every day, so the exploration route never repeats.
+- **Echo Guardians.** Floating dark orb + emissive core + orbiting motes,
+  all primitives. One-thumb interaction: the contextual `DISPEL` button
+  appears within 5m; 3 server-confirmed hits dissolve the guardian and
+  reveal the fragment. No aiming, no combat mechanics.
+- **Memory Fragments.** Emissive crystal (crossed boxes + core + motes).
+  Collecting is server-validated: the guardian must be cleared, the
+  fragment must belong to today's route, duplicates are rejected.
+- **The restoration.** When all 3 fragments are returned and the player
+  taps the tree, the world responds: fragments fly to the tree, the tree
+  pulses, a light wave travels outward, flowers bloom and the sky shifts.
+  The bloom persists for everyone who loads after.
+- **Social proof.** `GET /expedition` includes today's completion count;
+  the card shows "N explorers today". Completion is per-player-per-day,
+  one row in `expedition_progress`, so reloads and disconnects preserve
+  progress and nothing can be client-injected.
+
+API: `GET /expedition`, `POST /expedition/dispel`, `POST /expedition/collect`,
+`POST /expedition/complete` — all server-authoritative.
+
 ## Milestone 4: Mission + contextual interaction (Phase E)
 
 The world now answers "what am I supposed to do?" within seconds.
@@ -248,6 +276,10 @@ Environment variables:
 | GET | `/stones` | - | `200 {"stones":[{"id":"garden","memoryCount":N},…]}` | `500 {"error":"internal_error"}` |
 | GET | `/stones/:id` | - | `200 {"stone":{"id":"garden","memoryCount":N},"memories":[{"playerId":"0x…","reaction":"found","createdAt":"…"}]}` (newest first) | `404 {"error":"unknown_stone"}`, `500` |
 | POST | `/stones/:id/memories` | `{"playerId":"0x…40 hex…","reaction":"found"}` | `201 {"success":true,"stoneId":"garden","memoryCount":N,"memories":[…]}` | `400` invalid body/identity/reaction/extra fields, `404` unknown stone, `409 {"success":false,"error":"already_left_memory","memory":{…}}` duplicate, `413` too large, `500` db failure |
+| GET | `/expedition?playerId=…` | - | `200 {"day":"2026-08-16","seed":N,"fragments":[{id,hits,collected}…],"completed":bool,"todayCompletions":N}` | `400` invalid identity, `500` |
+| POST | `/expedition/dispel` | `{"playerId":"0x…","fragmentId":"g1"}` | `200 {"success":true,"hits":1..3,"cleared":bool}` | `400` invalid, `404` not in today's mission, `409` already collected, `500` |
+| POST | `/expedition/collect` | `{"playerId":"0x…","fragmentId":"g1"}` | `200 {"success":true,"collected":N}` | `400` invalid, `403` guardian active, `404` not today, `409` already collected, `500` |
+| POST | `/expedition/complete` | `{"playerId":"0x…"}` | `200 {"success":true,"completed":true,"todayCompletions":N}` | `403` not all collected, `409` already completed, `500` |
 
 The client sends its DCL session identity (`getUserData().userId`, an eth
 address). No wallet prompts, no signatures. `playerId` is required and

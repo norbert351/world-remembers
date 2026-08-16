@@ -7,8 +7,20 @@ import { stageFor } from '../../shared/world-state'
 import { isReactionId, isStoneId } from '../../shared/stones'
 import { MISSION } from '../../shared/mission'
 import {
+  EXPEDITION,
+  dailySeed,
+  dayKeyFromDate,
+  fragmentsForDay,
+  isFragmentId,
+  type ExpeditionFragmentId
+} from '../../shared/expedition'
+import {
+  addGuardianHit,
+  collectFragment,
+  completeExpedition,
   countContributions,
   countMissionProgress,
+  getExpeditionRow,
   getPlayerMemory,
   getStoneMemories,
   insertContribution,
@@ -60,6 +72,27 @@ function parseMemoryBody(body: unknown): { playerId: string; reaction: string } 
   return { playerId: raw.playerId.toLowerCase(), reaction: raw.reaction }
 }
 
+// Expedition action body: exactly { playerId, fragmentId }. Same strictness
+// as the contribution/memory parsers: no extra fields, validated identity.
+function parseExpeditionBody(body: unknown): { playerId: string; fragmentId: string } | { error: string } {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return { error: 'body must be a JSON object' }
+  }
+  const keys = Object.keys(body)
+  if (keys.length === 0) return { error: 'playerId and fragmentId are required' }
+  if (keys.some((k) => k !== 'playerId' && k !== 'fragmentId')) {
+    return { error: 'unexpected fields are not allowed' }
+  }
+  const raw = body as Record<string, unknown>
+  if (typeof raw.playerId !== 'string' || !PLAYER_ID_RE.test(raw.playerId)) {
+    return { error: 'playerId must be a valid 0x Ethereum address' }
+  }
+  if (typeof raw.fragmentId !== 'string' || !isFragmentId(raw.fragmentId)) {
+    return { error: 'invalid_fragment' }
+  }
+  return { playerId: raw.playerId.toLowerCase(), fragmentId: raw.fragmentId }
+}
+
 // Mission payload builder. Progress is derived server-side from the
 // persistent participant tables; the client only ever reads this.
 async function missionPayload(pool: Pool): Promise<{ mission: Record<string, unknown> }> {
@@ -74,6 +107,39 @@ async function missionPayload(pool: Pool): Promise<{ mission: Record<string, unk
       completed: progress >= MISSION.target
     }
   }
+}
+
+// --- Expedition -------------------------------------------------------------
+
+// Today's fragment route and the player's progress against it.
+// Everything derives from the date (seed) + the player's progress row.
+async function expeditionPayload(pool: Pool, playerId: string): Promise<Record<string, unknown>> {
+  const day = dayKeyFromDate(new Date())
+  const route = fragmentsForDay(day)
+  const row = await getExpeditionRow(pool, playerId, day)
+  const { rows } = await pool.query<{ count: number }>(
+    'SELECT COUNT(*)::int AS count FROM expedition_progress WHERE day = $1::date AND completed_at IS NOT NULL',
+    [day]
+  )
+  return {
+    day,
+    seed: dailySeed(day),
+    fragments: route.map((id, slot) => ({
+      id,
+      hits: (row.guardianHits >> (slot * 2)) & 3,
+      collected: (row.collected & (1 << slot)) !== 0
+    })),
+    completed: row.completedAt !== null,
+    todayCompletions: rows[0].count
+  }
+}
+
+// Which slot (0..2) a fragment id occupies today, or -1 if it is not part
+// of today's route. The single source of truth for "does this fragment
+// belong to today's mission".
+function slotFor(route: ExpeditionFragmentId[], id: unknown): number {
+  if (!isFragmentId(id)) return -1
+  return route.indexOf(id)
 }
 
 export function createApp(pool: Pool) {
@@ -132,6 +198,115 @@ export function createApp(pool: Pool) {
     try {
       const mission = await missionPayload(pool)
       res.json(mission)
+    } catch {
+      res.status(500).json({ error: 'internal_error' })
+    }
+  })
+
+  // --- Expedition -----------------------------------------------------------
+
+  // Today's Memory Expedition for this player: day, seed, fragment route,
+  // per-fragment guardian hits + collected state, completion count.
+  app.get('/expedition', async (req: Request, res: Response) => {
+    const parsed = parsePlayerId(req.query)
+    if ('error' in parsed) {
+      res.status(400).json({ error: parsed.error })
+      return
+    }
+    try {
+      res.json(await expeditionPayload(pool, parsed.playerId))
+    } catch {
+      res.status(500).json({ error: 'internal_error' })
+    }
+  })
+
+  // One dispel hit against a fragment's Echo Guardian. Requires a valid
+  // player, today's route membership, and a not-yet-collected fragment.
+  // Three hits clear the guardian; the server counts, never the client.
+  app.post('/expedition/dispel', async (req: Request, res: Response) => {
+    const parsed = parseExpeditionBody(req.body)
+    if ('error' in parsed) {
+      res.status(400).json({ error: parsed.error })
+      return
+    }
+    const { playerId, fragmentId } = parsed
+    try {
+      const day = dayKeyFromDate(new Date())
+      const route = fragmentsForDay(day)
+      const slot = slotFor(route, fragmentId)
+      if (slot < 0) {
+        res.status(404).json({ error: 'not_in_today_mission' })
+        return
+      }
+      const row = await getExpeditionRow(pool, parsed.playerId, day)
+      if ((row.collected & (1 << slot)) !== 0) {
+        res.status(409).json({ error: 'already_collected' })
+        return
+      }
+      const hits = await addGuardianHit(pool, parsed.playerId, day, slot)
+      res.json({ success: true, fragmentId, hits, cleared: hits >= EXPEDITION.guardianHits })
+    } catch {
+      res.status(500).json({ error: 'internal_error' })
+    }
+  })
+
+  // Collect a Memory Fragment: guardian must be cleared (3 hits), fragment
+  // must be in today's route and not already collected.
+  app.post('/expedition/collect', async (req: Request, res: Response) => {
+    const parsed = parseExpeditionBody(req.body)
+    if ('error' in parsed) {
+      res.status(400).json({ error: parsed.error })
+      return
+    }
+    const { playerId, fragmentId } = parsed
+    try {
+      const day = dayKeyFromDate(new Date())
+      const route = fragmentsForDay(day)
+      const slot = slotFor(route, fragmentId)
+      if (slot < 0) {
+        res.status(404).json({ error: 'not_in_today_mission' })
+        return
+      }
+      const row = await getExpeditionRow(pool, parsed.playerId, day)
+      if ((row.collected & (1 << slot)) !== 0) {
+        res.status(409).json({ error: 'already_collected' })
+        return
+      }
+      const hits = (row.guardianHits >> (slot * 2)) & 3
+      if (hits < EXPEDITION.guardianHits) {
+        res.status(403).json({ error: 'guardian_active' })
+        return
+      }
+      const collected = await collectFragment(pool, parsed.playerId, day, slot)
+      res.json({ success: true, fragmentId, collected })
+    } catch {
+      res.status(500).json({ error: 'internal_error' })
+    }
+  })
+
+  // Complete today's expedition: all three fragments collected. Returns
+  // the updated completion count (social proof for everyone).
+  app.post('/expedition/complete', async (req: Request, res: Response) => {
+    const parsed = parsePlayerId(req.body)
+    if ('error' in parsed) {
+      res.status(400).json({ error: parsed.error })
+      return
+    }
+    try {
+      const day = dayKeyFromDate(new Date())
+      const route = fragmentsForDay(day)
+      const row = await getExpeditionRow(pool, parsed.playerId, day)
+      const all = route.every((_, slot) => (row.collected & (1 << slot)) !== 0)
+      if (!all) {
+        res.status(403).json({ error: 'not_all_fragments_collected' })
+        return
+      }
+      if (row.completedAt !== null) {
+        res.status(409).json({ error: 'already_completed' })
+        return
+      }
+      const todayCompletions = await completeExpedition(pool, parsed.playerId, day)
+      res.json({ success: true, completed: true, todayCompletions })
     } catch {
       res.status(500).json({ error: 'internal_error' })
     }

@@ -118,3 +118,90 @@ export async function countMissionProgress(pool: Pool): Promise<number> {
   )
   return rows[0].count
 }
+
+// --- Expedition -------------------------------------------------------------
+
+export interface ExpeditionRow {
+  collected: number
+  guardianHits: number
+  completedAt: string | null
+}
+
+// Read (or create) today's progress row for a player. Day is a 'YYYY-MM-DD'
+// string; pg casts it to DATE safely (validated upstream).
+export async function getExpeditionRow(pool: Pool, playerId: string, day: string): Promise<ExpeditionRow> {
+  await pool.query(
+    `INSERT INTO expedition_progress (player_id, day)
+     VALUES ($1, $2::date)
+     ON CONFLICT (player_id, day) DO NOTHING`,
+    [playerId, day]
+  )
+  const { rows } = await pool.query<{ collected: number; guardian_hits: number; completed_at: Date | null }>(
+    `SELECT collected, guardian_hits, completed_at
+     FROM expedition_progress
+     WHERE player_id = $1 AND day = $2::date`,
+    [playerId, day]
+  )
+  const r = rows[0]
+  return {
+    collected: r.collected,
+    guardianHits: r.guardian_hits,
+    completedAt: r.completed_at ? r.completed_at.toISOString() : null
+  }
+}
+
+// Add one dispel hit for a fragment slot (0..2). Slots are 2 bits each in
+// the SMALLINT (max 3 hits). Addition is the correct increment; the WHERE
+// guard refuses to push a slot past 3.
+export async function addGuardianHit(pool: Pool, playerId: string, day: string, slot: number): Promise<number> {
+  const shift = slot * 2
+  const { rows } = await pool.query<{ hits: number }>(
+    `UPDATE expedition_progress
+     SET guardian_hits = guardian_hits + (1 << $3::int),
+         updated_at = now()
+     WHERE player_id = $1 AND day = $2::date
+       AND ((guardian_hits >> $3::int) & 3) < 3
+     RETURNING ((guardian_hits >> $3::int) & 3)::int AS hits`,
+    [playerId, day, shift]
+  )
+  if (rows.length === 0) {
+    // already at max for this slot: return the current cap
+    const cur = await pool.query<{ hits: number }>(
+      `SELECT ((guardian_hits >> $3::int) & 3)::int AS hits
+       FROM expedition_progress
+       WHERE player_id = $1 AND day = $2::date`,
+      [playerId, day, shift]
+    )
+    return cur.rows[0].hits
+  }
+  return rows[0].hits
+}
+
+// Mark a fragment slot collected (idempotent: OR of the bit).
+export async function collectFragment(pool: Pool, playerId: string, day: string, slot: number): Promise<number> {
+  const { rows } = await pool.query<{ collected: number }>(
+    `UPDATE expedition_progress
+     SET collected = collected | (1 << $3::int),
+         updated_at = now()
+     WHERE player_id = $1 AND day = $2::date
+     RETURNING collected::int`,
+    [playerId, day, slot]
+  )
+  return rows[0].collected
+}
+
+// Mark the expedition complete for today. Returns the new completion count
+// for the day (social proof).
+export async function completeExpedition(pool: Pool, playerId: string, day: string): Promise<number> {
+  await pool.query(
+    `UPDATE expedition_progress
+     SET completed_at = now(), updated_at = now()
+     WHERE player_id = $1 AND day = $2::date`,
+    [playerId, day]
+  )
+  const { rows } = await pool.query<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM expedition_progress WHERE day = $1::date AND completed_at IS NOT NULL`,
+    [day]
+  )
+  return rows[0].count
+}

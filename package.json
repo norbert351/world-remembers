@@ -14,7 +14,9 @@
     "test:onboarding": "esbuild tests/onboarding.test.ts --bundle --platform=node --format=esm --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/onboarding.mjs && node --test /tmp/onboarding.mjs",
     "test:interaction": "esbuild tests/interaction.test.ts --bundle --platform=node --format=esm --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/interaction.mjs && node --test /tmp/interaction.mjs",
     "test:mission": "esbuild tests/mission.test.ts --bundle --platform=node --format=esm --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/mission.mjs && node --test /tmp/mission.mjs",
-    "test": "npm run test:logic && npm run test:smoke && npm run test:http && npm run test:stones && npm run test:ritual && npm run test:onboarding && npm run test:interaction && npm run test:mission",
+    "test:expedition": "esbuild tests/expedition.test.ts --bundle --platform=node --format=esm --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/expedition.mjs && node --test /tmp/expedition.mjs",
+    "test:fragments-smoke": "esbuild tests/fragments-smoke.ts --bundle --platform=node --format=esm --alias:~system/Runtime=tests/runtime-stub.ts --outfile=/tmp/fragments-smoke.mjs && node /tmp/fragments-smoke.mjs",
+    "test": "npm run test:logic && npm run test:smoke && npm run test:http && npm run test:stones && npm run test:ritual && npm run test:onboarding && npm run test:interaction && npm run test:mission && npm run test:expedition && npm run test:fragments-smoke",
     "upgrade-sdk": "npm install --save-dev @dcl/sdk@latest",
     "upgrade-sdk:next": "npm install --save-dev @dcl/sdk@next"
   },
