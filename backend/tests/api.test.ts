@@ -55,6 +55,10 @@ before(async () => {
 
 beforeEach(async () => {
   await pool.query('TRUNCATE contributions')
+  await pool.query('TRUNCATE stone_memories')
+  await pool.query('TRUNCATE expedition_progress')
+  await pool.query('TRUNCATE location_memories')
+  await pool.query('TRUNCATE rare_memory')
 })
 
 after(async () => {
@@ -71,7 +75,9 @@ test('GET /health reports ok with database up', async () => {
 test('GET /world with zero contributions returns 0 DORMANT', async () => {
   const { status, body } = await api('/world')
   assert.equal(status, 200)
-  assert.deepEqual(body, { contributions: 0, stage: 'DORMANT' })
+  // legacy contract fields (the response also carries living-world state)
+  assert.equal(body.contributions, 0)
+  assert.equal(body.stage, 'DORMANT')
 })
 
 test('POST /contribute creates exactly one row and returns state', async () => {

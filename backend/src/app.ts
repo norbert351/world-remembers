@@ -15,15 +15,29 @@ import {
   type ExpeditionFragmentId
 } from '../../shared/expedition'
 import {
+  landmarkStageFor,
+  memoryLevelFor,
+  rareLocationForDay,
+  isLocationReactionId
+} from '../../shared/world-memory'
+import { ALL_FRAGMENT_IDS } from '../../shared/expedition'
+import {
   addGuardianHit,
   collectFragment,
+  communityActivity,
   completeExpedition,
   countContributions,
+  countLocationMemories,
   countMissionProgress,
+  discoverRareMemory,
   getExpeditionRow,
+  getLocationMemory,
+  getLocationMemories,
   getPlayerMemory,
+  getRareMemory,
   getStoneMemories,
   insertContribution,
+  insertLocationMemory,
   insertStoneMemory,
   listStones
 } from './db'
@@ -165,11 +179,33 @@ export function createApp(pool: Pool) {
     }
   })
 
-  // World state: contribution count + derived tree stage.
-  app.get('/world', async (_req: Request, res: Response) => {
+  // World state: contribution count + derived tree stage + living world
+  // (memory level, landmark progress, daily event, rare memory). The
+  // client parser only reads `contributions`, so extra fields are safe.
+  app.get('/world', async (req: Request, res: Response) => {
     try {
       const contributions = await countContributions(pool)
-      res.json({ contributions, stage: stageFor(contributions) })
+      const activity = await communityActivity(pool)
+      const level = memoryLevelFor(activity)
+      const landmark = landmarkStageFor(activity.completedExpeditions)
+      const day = dayKeyFromDate(new Date())
+      const rareLocation = rareLocationForDay(day, ALL_FRAGMENT_IDS)
+      const rare = await getRareMemory(pool, day, rareLocation)
+      // the daily pulse "happened" once today's first expedition completed
+      const pulse = activity.completedExpeditions > 0
+      res.json({
+        contributions,
+        stage: stageFor(contributions),
+        memoryLevel: { level: level.level, name: level.name, score: level.score },
+        landmark: { stage: landmark.stage, name: landmark.name },
+        dailyEvent: { day, pulse },
+        rareMemory: { locationId: rare.locationId, discovered: rare.discovered },
+        communityActivity: {
+          contributions: activity.contributions,
+          stoneMemories: activity.stoneMemories,
+          completedExpeditions: activity.completedExpeditions
+        }
+      })
     } catch {
       res.status(500).json({ error: 'internal_error' })
     }
@@ -307,6 +343,100 @@ export function createApp(pool: Pool) {
       }
       const todayCompletions = await completeExpedition(pool, parsed.playerId, day)
       res.json({ success: true, completed: true, todayCompletions })
+    } catch {
+      res.status(500).json({ error: 'internal_error' })
+    }
+  })
+
+  // --- Living World ---------------------------------------------------------
+
+  // Location memories (G4): reactions left at expedition locations. Same
+  // strictness as stone memories: whitelist reaction, one per player per
+  // location, no extra fields.
+  app.get('/locations/:locationId/memories', async (req: Request, res: Response) => {
+    const locationId = req.params.locationId
+    if (!isFragmentId(locationId)) {
+      res.status(404).json({ error: 'unknown_location' })
+      return
+    }
+    try {
+      const memories = await getLocationMemories(pool, locationId)
+      const count = await countLocationMemories(pool, locationId)
+      res.json({ locationId, memories, memoryCount: count })
+    } catch {
+      res.status(500).json({ error: 'internal_error' })
+    }
+  })
+
+  app.post('/locations/:locationId/memories', async (req: Request, res: Response) => {
+    const locationId = req.params.locationId
+    if (!isFragmentId(locationId)) {
+      res.status(404).json({ error: 'unknown_location' })
+      return
+    }
+    const raw = req.body as Record<string, unknown>
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      res.status(400).json({ error: 'body must be a JSON object' })
+      return
+    }
+    const keys = Object.keys(raw)
+    if (keys.length === 0) {
+      res.status(400).json({ error: 'playerId and reaction are required' })
+      return
+    }
+    if (keys.some((k) => k !== 'playerId' && k !== 'reaction')) {
+      res.status(400).json({ error: 'unexpected fields are not allowed' })
+      return
+    }
+    if (typeof raw.playerId !== 'string' || !PLAYER_ID_RE.test(raw.playerId)) {
+      res.status(400).json({ error: 'playerId must be a valid 0x Ethereum address' })
+      return
+    }
+    if (!isLocationReactionId(raw.reaction)) {
+      res.status(400).json({ error: 'reaction must be one of: remembered, growing, beautiful, iwashere' })
+      return
+    }
+    try {
+      await insertLocationMemory(pool, locationId, raw.playerId.toLowerCase(), raw.reaction)
+      const memories = await getLocationMemories(pool, locationId)
+      const count = await countLocationMemories(pool, locationId)
+      res.status(201).json({ success: true, locationId, reaction: raw.reaction, memoryCount: count, memories })
+    } catch (err) {
+      if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23505') {
+        const existing = await getLocationMemory(pool, locationId, raw.playerId.toLowerCase())
+        res.status(409).json({
+          success: false,
+          error: 'already_remembered',
+          memory: existing
+        })
+        return
+      }
+      res.status(500).json({ error: 'internal_error' })
+    }
+  })
+
+  // Rare memory discovery (G5): today's deterministic location, first
+  // explorer wins. The server validates the location matches the day's
+  // deterministic pick and that it is not already discovered.
+  app.post('/world/discover', async (req: Request, res: Response) => {
+    const parsed = parseExpeditionBody(req.body)
+    if ('error' in parsed) {
+      res.status(400).json({ error: parsed.error })
+      return
+    }
+    try {
+      const day = dayKeyFromDate(new Date())
+      const rareLocation = rareLocationForDay(day, ALL_FRAGMENT_IDS)
+      if (parsed.fragmentId !== rareLocation) {
+        res.status(404).json({ error: 'not_todays_rare_memory' })
+        return
+      }
+      const won = await discoverRareMemory(pool, day, rareLocation, parsed.playerId)
+      if (!won) {
+        res.status(409).json({ error: 'already_discovered' })
+        return
+      }
+      res.json({ success: true, locationId: rareLocation, discovered: true })
     } catch {
       res.status(500).json({ error: 'internal_error' })
     }

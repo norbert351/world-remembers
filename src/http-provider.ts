@@ -5,6 +5,7 @@ import type { StoneDetail, StoneProvider, StoneSummary } from './stone-state'
 import type { WorldStateProvider } from './state'
 import type { MissionProvider } from './mission'
 import type { ExpeditionProvider } from './expedition'
+import { parseLivingWorld, type LivingWorldState, type LocationMemoriesResponse } from './living-world'
 import { isReactionId, isStoneId, REACTIONS, type ReactionId } from '../shared/stones'
 import { missionFromServer, type MissionState } from '../shared/mission'
 import { expeditionFromServer, type ExpeditionFragmentId, type ExpeditionState } from '../shared/expedition'
@@ -141,6 +142,62 @@ export class HttpExpeditionProvider implements ExpeditionProvider {
   async complete(): Promise<ExpeditionState> {
     await this.action('/expedition/complete')
     return this.load()
+  }
+}
+
+// --- Living World (Phase F+G) -----------------------------------------------
+
+export class HttpLivingWorldProvider {
+  constructor(
+    private readonly baseUrl: string,
+    private readonly playerId: () => string | null,
+    private readonly fetchImpl: typeof fetch = fetch
+  ) {}
+
+  private auth(): string {
+    const id = this.playerId()
+    if (!id) throw new Error('no_identity')
+    return id
+  }
+
+  // the living-world block rides on GET /world (already fetched by the
+  // world provider); this is a dedicated read for the scene's own sync
+  async load(): Promise<LivingWorldState> {
+    const id = this.auth()
+    const res = await this.fetchImpl(`${this.baseUrl}/world?playerId=${encodeURIComponent(id)}`)
+    if (!res.ok) throw new Error(`world_http_${res.status}`)
+    return parseLivingWorld(await res.json())
+  }
+
+  // G4: leave a reaction at an expedition location
+  async leaveLocationMemory(locationId: string, reaction: string): Promise<LocationMemoriesResponse> {
+    const id = this.auth()
+    const res = await this.fetchImpl(`${this.baseUrl}/locations/${locationId}/memories`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: id, reaction })
+    })
+    if (res.status === 409) throw new Error('already_remembered')
+    if (!res.ok) throw new Error(`location_memory_http_${res.status}`)
+    const body = (await res.json()) as Record<string, unknown>
+    return {
+      locationId,
+      memories: Array.isArray(body.memories) ? (body.memories as LocationMemoriesResponse['memories']) : [],
+      memoryCount: typeof body.memoryCount === 'number' ? body.memoryCount : 0
+    }
+  }
+
+  // G5: claim today's rare memory (first explorer wins)
+  async discoverRare(locationId: string): Promise<boolean> {
+    const id = this.auth()
+    const res = await this.fetchImpl(`${this.baseUrl}/world/discover`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ playerId: id, fragmentId: locationId })
+    })
+    if (res.status === 409) return false // already discovered by someone
+    if (!res.ok) throw new Error(`discover_http_${res.status}`)
+    return true
   }
 }
 

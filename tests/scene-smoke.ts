@@ -36,10 +36,11 @@ for (const [entity] of engine.getEntitiesWith(Transform)) {
 // (root + body + rune + ring + label + rig + 3 motes): 86/32/43/3.
 // Phase E adds composition (2 zone discs + 3 path stones + 16 plaza border
 // + 2 benches x 4 + 4 trail plants x 3 = 41) and tree hero extras
-// (3 ground dots + 6 inner flowers = 9): 136/38/81/3.
-check('136 entities with transforms', total === 136, total)
+// (3 ground dots + 6 inner flowers = 9) + lighthouse foundation stage
+// (7 parts): 144/38/88/3.
+check('144 entities with transforms', total === 144, total)
 check('38 gltf entities', gltfCount === 38, gltfCount)
-check('81 mesh entities', meshCount === 81, meshCount)
+check('88 mesh entities', meshCount === 88, meshCount)
 check('3 text labels (one per stone)', textCount === 3, textCount)
 
 // key placements from the design

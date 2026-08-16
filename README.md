@@ -3,7 +3,34 @@
 A persistent social garden for the Decentraland Friendzone Mobile Buildathon.
 Every tap helps the Memory Tree grow, and the world remembers who was here.
 
-## Milestone 5: The Memory Expedition
+## Milestone 6: The Living Memory World (Phase F+G)
+
+- **World Memory Level** — 5 derived levels from community activity
+  (contributions + 5×stone memories + 25×completed expeditions).
+  Level 1 THE SLEEPING WORLD → 5 THE REMEMBERED WORLD. Configurable
+  thresholds in `shared/world-memory.ts`. Server-derived, never stored,
+  never client-injectable.
+- **Visible evolution** — level visuals applied to existing entities
+  (flower rings, lantern glow, tree glow, motes, sky) in
+  `src/world-evolution.ts`.
+- **Memory Pulse** — the daily world event: tree pulse + light wave + sky
+  shift. Triggered by server daily-event state, same for all players,
+  works solo.
+- **Memory Lighthouse** — one persistent primitive landmark on the east
+  ridge, evolving FOUNDATION → TOWER → LANTERN → BEAM → BEACON as the
+  community completes expeditions. `src/lighthouse.ts`.
+- **"While You Were Gone"** — once-per-session panel with real server
+  community data (garden, memories left, explorers, memory level).
+- **Memory Trails** — collected expedition sites glow brighter as
+  completions accumulate ("the location becomes richer").
+- **Location memories** — leave one of 4 reactions at expedition sites
+  (❤️ REMEMBERED 🌱 GROWING ✨ BEAUTIFUL 👋 I WAS HERE); one per player
+  per location, whitelist + duplicate protection.
+- **Rare Memory** — deterministic daily golden seed at one expedition
+  location; first discoverer recorded; "🌟 RARE MEMORY DISCOVERED" state
+  for the rest of the day. Server decides; client cannot fake it.
+
+## Milestone 5: The Me...
 
 The daily objective: **find the lost Memory Fragments, overcome the Echo
 Guardians protecting them, and return the fragments to the Memory Tree.**

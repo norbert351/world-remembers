@@ -6,7 +6,13 @@ import { getPlayer } from '@dcl/sdk/players'
 import { setupGarden } from './garden'
 import { API, STAGES } from './config'
 import { getPlayerIdentity } from './identity'
-import { HttpExpeditionProvider, HttpMissionProvider, HttpStoneProvider, HttpWorldStateProvider } from './http-provider'
+import {
+  HttpExpeditionProvider,
+  HttpLivingWorldProvider,
+  HttpMissionProvider,
+  HttpStoneProvider,
+  HttpWorldStateProvider
+} from './http-provider'
 import { loadWorldState, playerContributedFlag, setStateListener, worldState } from './state'
 import { loadStones, playerStoneMemoryIds, setStoneIdentityResolver, stoneState } from './stone-state'
 import { refreshStoneLabels, setupStones, stonePulseSystem, validateStoneConfig } from './stones'
@@ -55,7 +61,19 @@ import {
   loadExpedition,
   setExpeditionIdentityResolver
 } from './expedition'
-import { resetRestoration, restorationSystem, restorationWaveSystem } from './restoration'
+import { resetRestoration, restorationSystem, restorationWaveSystem, startRestoration } from './restoration'
+import { startPulse } from './tree'
+import { setupLighthouse } from './lighthouse'
+import {
+  applyLivingWorld,
+  livingDailyPulse,
+  livingRareDiscovered,
+  livingRareLocation,
+  livingWorldState,
+  loadLivingWorld,
+  setLivingIdentityResolver
+} from './living-world'
+import { syncLivingWorld } from './world-evolution'
 import type { MissionState } from '../shared/mission'
 import { FRAGMENT_LOCATIONS } from '../shared/expedition'
 
@@ -78,10 +96,12 @@ export function main() {
   })
   missionState.provider = new HttpMissionProvider(API.baseUrl)
   expeditionState.provider = new HttpExpeditionProvider(API.baseUrl, getPlayerIdentity)
+  livingWorldState.provider = new HttpLivingWorldProvider(API.baseUrl, getPlayerIdentity)
   // stones and mission use the same DCL session identity as contributions
   setStoneIdentityResolver()
   setMissionIdentityResolver()
   setExpeditionIdentityResolver()
+  setLivingIdentityResolver()
   setFragmentIdentityResolver(getPlayerIdentity)
 
   // wire session-local participation evidence into the mission panel
@@ -99,6 +119,7 @@ export function main() {
   if (validateStoneConfig()) {
     setupStones()
   }
+  setupLighthouse()
   setupUi()
 
   // the ritual reacts to real world state and drives its own visuals
@@ -119,6 +140,7 @@ export function main() {
   engine.addSystem(expeditionVisualSystem)
   engine.addSystem(restorationSystem)
   engine.addSystem(restorationWaveSystem)
+  engine.addSystem((dt) => dailyPulseSystem(dt))
   engine.addSystem((dt) => tickRitual(dt))
   engine.addSystem((dt) => tickOnboarding(dt))
   engine.addSystem(proximitySystem)
@@ -133,6 +155,15 @@ export function main() {
   // expedition: spawn today's sites, then sync them against server state
   void loadExpedition().then(() => {
     setupExpeditionSites()
+    refreshInteraction()
+  })
+  // living world: memory level, landmark, rare memory, daily pulse
+  void loadLivingWorld().then(() => {
+    syncLivingWorld()
+    // the daily Memory Pulse plays for everyone once the world has life
+    if (livingDailyPulse()) {
+      pulseRequested = true
+    }
     refreshInteraction()
   })
 
@@ -191,6 +222,23 @@ function refreshInteraction(): void {
     missionActive: missionActive(),
     missionCompleted: missionCompleted()
   })
+  // G5: the undiscovered Rare Memory is the top expedition-adjacent target
+  const rareLoc = livingRareLocation()
+  if (rareLoc !== null && !livingRareDiscovered()) {
+    const pos = FRAGMENT_LOCATIONS[rareLoc as keyof typeof FRAGMENT_LOCATIONS]
+    if (pos) {
+      addExpeditionTarget({
+        id: `rare-${rareLoc}`,
+        type: 'fragment',
+        position: { x: pos.x, z: pos.z },
+        radius: EXPEDITION_INTERACTION_RADIUS,
+        label: 'DISCOVER RARE MEMORY',
+        hint: 'A golden memory waits',
+        priority: 1,
+        enabled: true
+      })
+    }
+  }
   const p = getPlayer()
   if (p?.position) {
     updateInteraction({ x: p.position.x, z: p.position.z }, interactionTargets)
@@ -206,6 +254,21 @@ function proximitySystem(dt: number): void {
   if (proximityAccum < 0.5) return
   proximityAccum = 0
   refreshInteraction()
+}
+
+// --- daily Memory Pulse (F3) ------------------------------------------------
+
+// The pulse plays once when the player loads into a world that has life
+// today (server says dailyEvent.pulse). One short visual event, everyone
+// sees the same thing: wave ring + tree pulse + sky shift.
+let pulseRequested = false
+let pulsePlayed = false
+
+function dailyPulseSystem(dt: number): void {
+  if (!pulseRequested || pulsePlayed) return
+  pulsePlayed = true
+  // reuse the restoration: tree pulse + expanding light wave + sky shift
+  startRestoration([])
 }
 
 // re-exported so the UI can read the same instances

@@ -36,7 +36,9 @@ const flyers: FlyingFragment[] = []
 let flyTime = 0
 const FLY_DURATION = 2.8
 
-// Call when the server confirms expedition completion. Idempotent.
+// Call when the server confirms expedition completion (with positions) or
+// when the daily Memory Pulse fires (no positions: wave + sky only).
+// Idempotent.
 export function startRestoration(positions: { x: number; z: number }[]): void {
   skyShiftTime = SKY_SHIFT_DURATION
   flyTime = 0
@@ -59,7 +61,11 @@ export function startRestoration(positions: { x: number; z: number }[]): void {
     })
     flyers.push({ entity: e, from: p, t: 0, done: false })
   }
-  // the payoff starts once the fragments arrive
+  if (positions.length === 0) {
+    // daily pulse: no fragments to fly, fire the wave immediately
+    waveRequested = true
+  }
+  // the payoff starts once the fragments arrive (or immediately above)
 }
 
 // One system: flies the fragments to the tree heart, then pulses, blooms,

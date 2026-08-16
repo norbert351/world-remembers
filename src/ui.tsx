@@ -28,6 +28,8 @@ import {
 } from './expedition'
 import { FRAGMENT_LOCATIONS, type ExpeditionFragmentId } from '../shared/expedition'
 import { startRestoration } from './restoration'
+import { livingMemoryLevel, livingMemoryLevelName, livingWorldState } from './living-world'
+import { LOCATION_REACTIONS, type LocationReactionId } from '../shared/world-memory'
 
 export function setupUi() {
   ReactEcsRenderer.setUiRenderer(uiComponent)
@@ -86,6 +88,9 @@ let expeditionPanelCollapsed = false
 // fires the restoration ritual exactly once per completion
 let restorationTriggered = false
 let lastSeenCompleted = false
+// "While You Were Gone" — once per session, dismissible
+let returnPanelDismissed = false
+let returnPanelSeen = false
 
 // the player's own participation summary for the mission panel
 function playerContributedText(): string {
@@ -135,8 +140,68 @@ const uiComponent = () => {
     }
   }
 
+  // "While You Were Gone": once per session, after the living world loads,
+  // only when there is real community activity to report
+  const lw = livingWorldState.state
+  const hasCommunityLife =
+    lw !== null && (lw.communityActivity.contributions > 0 || lw.communityActivity.stoneMemories > 0 || lw.communityActivity.completedExpeditions > 0)
+  const showReturnPanel = lw !== null && hasCommunityLife && !returnPanelDismissed && !returnPanelSeen
+  if (showReturnPanel) returnPanelSeen = true
+
   return (
     <ScreenInsetArea uiTransform={{ width: '100%', height: '100%' }}>
+      {/* "While You Were Gone" — real server data, dismissible, once */}
+      {showReturnPanel && !stoneOpen && (
+        <UiEntity
+          uiTransform={{
+            positionType: 'absolute',
+            position: { top: 0 },
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: { left: 24, right: 24 }
+          }}
+        >
+          <UiEntity
+            uiTransform={{
+              width: '100%',
+              maxWidth: 380,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'stretch',
+              padding: { top: 18, bottom: 18, left: 18, right: 18 }
+            }}
+            uiBackground={{ color: PANEL_SOLID }}
+          >
+            <Label value="WHILE YOU WERE GONE" fontSize={18} color={GOLD} textAlign="middle-center" />
+            <Label value={`🌱 The garden grew.`} fontSize={14} color={CREAM} textAlign="middle-left" uiTransform={{ margin: { top: 10 } }} />
+            <Label
+              value={`🗿 ${lw!.communityActivity.stoneMemories} new ${lw!.communityActivity.stoneMemories === 1 ? 'memory' : 'memories'} left.`}
+              fontSize={14}
+              color={CREAM}
+              textAlign="middle-left"
+            />
+            <Label
+              value={`✨ ${lw!.communityActivity.completedExpeditions} ${lw!.communityActivity.completedExpeditions === 1 ? 'explorer' : 'explorers'} restored memories.`}
+              fontSize={14}
+              color={CREAM}
+              textAlign="middle-left"
+            />
+            <Label value={`🔥 The world reached Memory Level ${livingMemoryLevel()}: ${livingMemoryLevelName()}.`} fontSize={14} color={GOLD} textAlign="middle-left" />
+            <Button
+              value="EXPLORE"
+              variant="primary"
+              fontSize={18}
+              uiTransform={{ width: '100%', height: 56, margin: { top: 14 } }}
+              onMouseDown={() => (returnPanelDismissed = true)}
+            />
+          </UiEntity>
+        </UiEntity>
+      )}
+
       {/* top: stage chip + counter (hidden while the stone UI is open) */}
       {!stoneOpen && (
         <UiEntity

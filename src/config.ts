@@ -184,3 +184,61 @@ export const TRAILS = [
   { x: 22.6, z: 22.6 },
   { x: 24.6, z: 24.6 }
 ]
+
+// The Memory Lighthouse: community landmark, visible from most of the
+// island. Positioned on the east ridge overlooking the garden.
+export const LIGHTHOUSE = {
+  position: { x: 27.5, z: 17.2 }
+}
+
+// --- Living world visual evolution (Phase F) --------------------------------
+
+// Per memory level: what the scene toggles. All reuse existing entities
+// (lantern glow, tree embers, motes, daisy rings) — no new environments.
+export const LEVEL_VISUALS = [
+  {
+    level: 1,
+    flowerRing: 0,
+    lanternBoost: 0,
+    treeGlowBoost: 0,
+    moteBoost: 0,
+    skyTime: 0.72
+  },
+  {
+    level: 2,
+    flowerRing: 4,
+    lanternBoost: 0.15,
+    treeGlowBoost: 0.2,
+    moteBoost: 2,
+    skyTime: 0.6
+  },
+  {
+    level: 3,
+    flowerRing: 8,
+    lanternBoost: 0.3,
+    treeGlowBoost: 0.35,
+    moteBoost: 4,
+    skyTime: 0.52
+  },
+  {
+    level: 4,
+    flowerRing: 12,
+    lanternBoost: 0.5,
+    treeGlowBoost: 0.5,
+    moteBoost: 6,
+    skyTime: 0.45
+  },
+  {
+    level: 5,
+    flowerRing: 16,
+    lanternBoost: 0.7,
+    treeGlowBoost: 0.8,
+    moteBoost: 8,
+    skyTime: 0.4
+  }
+] as const
+
+export function levelVisuals(level: number): (typeof LEVEL_VISUALS)[number] {
+  const v = LEVEL_VISUALS.find((x) => x.level === level)
+  return v ?? LEVEL_VISUALS[0]
+}
