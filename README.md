@@ -3,6 +3,84 @@
 A persistent social garden for the Decentraland Friendzone Mobile Buildathon.
 Every tap helps the Memory Tree grow, and the world remembers who was here.
 
+## Milestone 7: Memory Realms (Phase H)
+
+The World is now a **Hub + daily Memory Realm** experience. The Hub stays the
+player's home (tree, stones, lighthouse, community, evolution); the daily expedition now happens in a themed realm reached through a portal.
+
+- **Hub + Realms, one World.** The scene is a single 12x12 parcel World. The
+  Hub is the original 2x2 garden; three 48x48 m realms (Forgotten Forest, Lost
+  Ruins, Starfall Island) sit at a distance around it.
+- **Seamless portals.** Entering a realm uses the documented in-scene
+  `movePlayerTo` (~system/RestrictedActions, `ALLOW_TO_MOVE_PLAYER_INSIDE_SCENE`
+  permission), switching the skybox to the realm's mood. Returning teleports
+  the player home. `teleportTo` was rejected because it shows a confirmation
+  screen and breaks the "somewhere else now" moment.
+- **Deterministic daily realm.** `shared/realms.ts` picks today's realm from
+  date + world id (same seed family as the expedition). The server returns the
+  realm + today's three objective ids; the client renders exactly that and can
+  never choose a different realm.
+- **Server-authoritative.** The expedition payload now carries `realm`; the
+  client validator rejects wrong-realm fragments and unknown realm ids. No new
+  tables — guardian hits/collection/completion reuse `expedition_progress`.
+- **Journey layout.** Each realm has an entry landmark, a midpoint landmark, a
+  Memory Shrine, and three objectives spaced along a path (guarded fragments).
+  The in-realm trail guides entry → 1 → 2 → 3 → shrine.
+- **Mobile-first flow.** ENTER REALM → explore → dispel guardian → collect →
+  RETURN TO HUB / RESTORE MEMORY → the existing restoration payoff plays.
+
+## Mobile launch QR (Phase H-QR)
+
+The Decentraland **mobile app only opens a deployed World**. A dev preview QR
+(`decentraland://open?preview=…`) loads only on the same Wi-Fi and is
+browser/desktop-only from a cloud VM. The production QR must be the official
+World URL `https://play.decentraland.org/?realm=<name>.dcl.eth&position=0,0`.
+
+Single source of truth + tooling in this repo:
+
+- `scripts/mobile-link.mjs` — the only place launch URLs are built/validated.
+- `scripts/generate-mobile-qr.mjs` — emit a dev or world QR PNG (encodes only the launch URL, never the API/DB).
+- `scripts/validate-mobile-qr.mjs` — decodes a QR PNG and fails the build if the URL is invalid.
+- `scripts/security-scan.sh` — asserts no credentials ship in the client.
+- `npm test:mobile-link`, `npm run qr:dev`, `npm run qr:world`, `npm run security:scan`.
+
+Status: **World not yet deployed** → `qr:world` reports `PRODUCTION_BLOCKED`
+until a `worldConfiguration.name` exists and the World is pushed. See
+`docs/MOBILE-QR-TEST.md` for the exact deploy + QR steps and the phone test.
+
+## Phase I — exploration game-feel (smallest-set polish)
+
+Turned the systems into a coherent exploration loop without adding economy or
+mechanics. What changed (all server-authoritative, all mobile-first):
+
+- **Live navigation readout** (`src/navigation.ts`): the expedition card now
+  shows `NEXT · <REALM> · ~<dist>m`, updating as the player moves, pointing at
+  the next unfound fragment (or the Shrine when all 3 are found). Distance is
+  computed from the 0.5s proximity tick's player position; the trail + beacons
+  remain the in-world guide.
+- **Guardian escalation** (`guardianStageFor` in `src/fragments.ts`): dispel
+  now reads visually. Calm dark orb → hot/thrashing at 1/3 and 2/3 → bright
+  "defeated" shimmer at 3/3 before the fragment is revealed. Applied only on
+  hit change (cheap); the server still counts hits.
+- **Memory Journal** (top-right journal toggle): lightweight progression panel
+  — TODAY (3 memories + restoration ✓/○) and WORLD (Memory Level + collective
+  restored today). Every row is server-derived; nothing invented.
+- **Tomorrow's promise**: the completed card now says "A new memory will
+  appear tomorrow. Return to discover it." for retention.
+- Onboarding, return/While-You-Were-Gone, mission card, proximity interaction
+  (already camera-independent, priority-based) and the DEV/World QR tooling
+  were already in place from earlier phases.
+
+## Phase J — competition finalization
+
+Polish (no new systems): a `MEMORY FOUND` toast shows each fragment's flavor
+line on collection; the Memory Journal gained a RARE MEMORY row; the completed
+card celebrates with truthful social copy ("You and N others restored it
+together") when real server data shows other explorers. Real-device gate
+checklists live in `docs/QA-PLAN.md` (Tests A–D + mobile UX) and
+`docs/MOBILE-QR-TEST.md`. World deployment is still the one blocking step
+before a production app QR / phone test: see `docs/QA-PLAN.md` precondition.
+
 ## Milestone 6: The Living Memory World (Phase F+G)
 
 - **World Memory Level** — 5 derived levels from community activity

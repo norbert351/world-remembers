@@ -14,6 +14,9 @@ import { setStoneIdentityResolver } from '../../src/stone-state'
 const devUrl = process.env.DATABASE_URL
 assert.ok(devUrl, 'DATABASE_URL must be set (backend/.env)')
 const testUrl = devUrl.replace(/\/[^/]+$/, '/world_remembers_test')
+// Neon requires TLS; enable it on the raw test client (the app pool already
+// handles this via createPool)
+const testSsl = /(sslmode|neon\.tech)/i.test(testUrl)
 const API_PORT = 3998
 const BASE = `http://127.0.0.1:${API_PORT}`
 
@@ -44,7 +47,7 @@ before(async () => {
   })
   await waitForHealth()
 
-  db = new Client({ connectionString: testUrl })
+  db = new Client({ connectionString: testUrl, ...(testSsl ? { ssl: { rejectUnauthorized: false } } : {}) })
   await db.connect()
   // self-contained: apply both migrations before touching data
   for (const file of ['001_contributions.sql', '002_memory_stones.sql']) {

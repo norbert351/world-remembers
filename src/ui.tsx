@@ -4,7 +4,7 @@
 // picker and toasts are all driven by server-confirmed state.
 import ReactEcs, { Button, Label, ReactEcsRenderer, ScreenInsetArea, UiEntity } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
-import { STAGES } from './config'
+import { STAGES, TREE } from './config'
 import { contributionState, contributeToWorld, stageFor, worldState } from './state'
 import { startPulse } from './tree'
 import { closeStone, leaveMemoryOnStone, myMemoryOn, selectStone, stoneState } from './stone-state'
@@ -26,10 +26,21 @@ import {
   expeditionState,
   expeditionTodayCompletions
 } from './expedition'
-import { FRAGMENT_LOCATIONS, type ExpeditionFragmentId } from '../shared/expedition'
+import { fragmentLocation, zoneOf, type ExpeditionFragmentId } from '../shared/expedition'
+import { enterRealm, returnToHub } from './realm-portal'
+import { realmById, objectiveById } from '../shared/realms'
+import { describeNextTarget } from './navigation'
 import { startRestoration } from './restoration'
-import { livingMemoryLevel, livingMemoryLevelName, livingWorldState } from './living-world'
+import {
+  livingCommunityActivity,
+  livingMemoryLevel,
+  livingMemoryLevelName,
+  livingRareDiscovered,
+  livingRareLocation,
+  livingWorldState
+} from './living-world'
 import { LOCATION_REACTIONS, type LocationReactionId } from '../shared/world-memory'
+import { trailSegment } from './trail-core'
 
 export function setupUi() {
   ReactEcsRenderer.setUiRenderer(uiComponent)
@@ -81,16 +92,32 @@ function leaveMemory(reaction: ReactionId) {
 // two-stage flow: [LEAVE YOUR MEMORY] reveals the four reactions, the player
 // picks one, the server confirms. Module-level because uiComponent re-renders.
 let pickerOpen = false
-// mission panel starts open once loaded; collapses to a chip
-let missionPanelCollapsed = false
+// the community (100-player) mission is secondary; collapsed to a compact
+// chip by default so the Expedition reads as the one clear objective
+let missionPanelCollapsed = true
 // expedition card starts open once loaded; collapses to a chip
 let expeditionPanelCollapsed = false
+let journalOpen = false
 // fires the restoration ritual exactly once per completion
 let restorationTriggered = false
 let lastSeenCompleted = false
 // "While You Were Gone" — once per session, dismissible
 let returnPanelDismissed = false
 let returnPanelSeen = false
+// how far into today's mission the player has gone (client acknowledgment
+// only; all real progress is server-authoritative). START reveals the
+// trail and focuses the objective.
+let startedExpedition = false
+// brief success banner after a live restoration + when the world level
+// actually ticks up (never faked — only when the real level changes)
+let restorationBannerUntil = 0
+let levelToastUntil = 0
+let lastLevelSeen = -1
+let levelToastValue = 0
+// a player who just restored is nudged (optionally) to leave a trace
+let leaveTraceHintUntil = 0
+// subtle, dismissible rare-memory discovery nudge (P2)
+let rareHintDismissed = false
 
 // the player's own participation summary for the mission panel
 function playerContributedText(): string {
@@ -98,6 +125,30 @@ function playerContributedText(): string {
   const parts: string[] = []
   if (stones.length > 0) parts.push(`remembered at stone${stones.length > 1 ? 's' : ''} ${stones.join(', ')}`)
   return parts.length > 0 ? parts.join(' · ') : 'the world felt your tap'
+}
+
+// today's realm from the server's expedition state
+function todayRealm() {
+  const id = expeditionState.state?.realm.id
+  return id ? realmById(id) : undefined
+}
+
+// bring the player home, then complete + restore (payoff plays at the tree)
+function restoreAndReturn(): void {
+  void (async () => {
+    await returnToHub()
+    await completeExpedition()
+  })()
+}
+
+// guidance line that points the player at the next objective along the
+// navigational trail (pure trail-core math, rendered as text)
+function nextObjectiveText(): string {
+  const seg = trailSegment(expeditionFragments(), { x: TREE.position.x, z: TREE.position.z })
+  if (seg === null) return 'Find the lost memories.'
+  if (seg.allCollected) return 'All memories found. Follow the trail home to restore them.'
+  const zone = seg.next ? zoneOf(seg.next.id as ExpeditionFragmentId) : 'the garden'
+  return `Follow the trail — a memory waits in ${zone}.`
 }
 
 // --- UI --------------------------------------------------------------------
@@ -129,16 +180,33 @@ const uiComponent = () => {
   const onboardingLine = currentOnboardingLine()
 
   // restoration: when the server confirms completion, fly the fragments in
-  // and let the world respond — once
+  // and let the world respond — once. A live (or resumed) completion shows a
+  // short success banner and a nudge to leave a trace for the next explorer.
   const completedNow = expeditionState.state?.completed ?? false
+
+  // live navigation readout (distance to the next objective / shrine)
+  const nav = describeNextTarget(interactionState.player)
   if (completedNow && !lastSeenCompleted) {
     lastSeenCompleted = true
+    restorationBannerUntil = Date.now() + 5000
+    leaveTraceHintUntil = Date.now() + 9000
     if (!restorationTriggered) {
       restorationTriggered = true
-      const positions = expeditionFragments().map((f) => FRAGMENT_LOCATIONS[f.id])
+      const positions = expeditionFragments().map((f) => fragmentLocation(f.id)).filter((p): p is { x: number; z: number } => !!p)
       startRestoration(positions)
     }
   }
+
+  // world memory level: surface an honest toast ONLY when the real level
+  // rises this session (server-derived). Never fakes progression.
+  const curLevel = livingMemoryLevel()
+  if (lastLevelSeen === -1) {
+    lastLevelSeen = curLevel
+  } else if (curLevel > lastLevelSeen && lastLevelSeen >= 1) {
+    levelToastUntil = Date.now() + 5000
+    levelToastValue = curLevel
+  }
+  lastLevelSeen = curLevel
 
   // "While You Were Gone": once per session, after the living world loads,
   // only when there is real community activity to report
@@ -190,13 +258,18 @@ const uiComponent = () => {
               color={CREAM}
               textAlign="middle-left"
             />
+            <Label value={`🌍 ${expeditionTodayCompletions()} completed today's memory.`} fontSize={14} color={CREAM} textAlign="middle-left" />
             <Label value={`🔥 The world reached Memory Level ${livingMemoryLevel()}: ${livingMemoryLevelName()}.`} fontSize={14} color={GOLD} textAlign="middle-left" />
+            <Label value={`TODAY'S MEMORY IS READY`} fontSize={16} color={GOLD} textAlign="middle-center" uiTransform={{ margin: { top: 8 } }} />
             <Button
-              value="EXPLORE"
+              value="BEGIN EXPEDITION"
               variant="primary"
               fontSize={18}
-              uiTransform={{ width: '100%', height: 56, margin: { top: 14 } }}
-              onMouseDown={() => (returnPanelDismissed = true)}
+              uiTransform={{ width: '100%', height: 56, margin: { top: 12 } }}
+              onMouseDown={() => {
+                startedExpedition = true
+                returnPanelDismissed = true
+              }}
             />
           </UiEntity>
         </UiEntity>
@@ -222,6 +295,13 @@ const uiComponent = () => {
           </UiEntity>
           <Label value={String(worldState.contributions)} fontSize={48} color={Color4.White()} textAlign="middle-center" />
           <Label value="MEMORY CONTRIBUTIONS" fontSize={12} color={CREAM} textAlign="middle-center" />
+          <Label
+            value={`🌍 ${expeditionTodayCompletions()} explorers · ${livingCommunityActivity().completedExpeditions} restored today`}
+            fontSize={12}
+            color={Color4.fromHexString('#9fd8ff')}
+            textAlign="middle-center"
+            uiTransform={{ margin: { top: 2 } }}
+          />
           {worldState.loadError && (
             <UiEntity
               uiTransform={{ padding: { top: 6, bottom: 6, left: 18, right: 18 }, margin: { top: 10 } }}
@@ -249,6 +329,81 @@ const uiComponent = () => {
         </UiEntity>
       )}
 
+      {/* success / reward / world-consequence banners: restoration payoff,
+          honest level-up toast, rare-discovery nudge, leave-a-trace hint.
+          All kept small, centered, and non-blocking. */}
+      {!stoneOpen && (
+        <UiEntity
+          uiTransform={{
+            positionType: 'absolute',
+            position: { top: 230 },
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center'
+          }}
+        >
+          {Date.now() < restorationBannerUntil && (
+            <UiEntity
+              uiTransform={{ padding: { top: 12, bottom: 12, left: 30, right: 30 } }}
+              uiBackground={{ color: Color4.fromHexString('#1c2a18f2') }}
+            >
+              <Label value="MEMORY RESTORED ✨" fontSize={22} color={GOLD} textAlign="middle-center" />
+            </UiEntity>
+          )}
+          {Date.now() < levelToastUntil && (
+            <UiEntity
+              uiTransform={{ padding: { top: 10, bottom: 10, left: 26, right: 26 } }}
+              uiBackground={{ color: PANEL }}
+            >
+              <Label
+                value={`The world reached Memory Level ${levelToastValue}: ${livingMemoryLevelName()}`}
+                fontSize={15}
+                color={Color4.fromHexString('#9fd8ff')}
+                textAlign="middle-center"
+              />
+            </UiEntity>
+          )}
+          {Date.now() - expeditionState.lastCollectAt < TOAST_MS && (() => {
+            const flavor = expeditionState.lastCollectFragment ? objectiveById(expeditionState.lastCollectFragment)?.flavor : undefined
+            return (
+              <UiEntity
+                uiTransform={{ padding: { top: 10, bottom: 10, left: 24, right: 24 } }}
+                uiBackground={{ color: Color4.fromHexString('#1c2a30f2') }}
+              >
+                <Label
+                  value={`MEMORY FOUND${flavor ? ` — ${flavor}` : ''}`}
+                  fontSize={15}
+                  color={Color4.fromHexString('#9fd8ff')}
+                  textAlign="middle-center"
+                />
+              </UiEntity>
+            )
+          })()}
+          {!rareHintDismissed && livingRareLocation() !== null && !livingRareDiscovered() && (
+            <UiEntity
+              uiTransform={{ padding: { top: 8, bottom: 8, left: 20, right: 20 } }}
+              uiBackground={{ color: Color4.fromHexString('#2a2418f2') }}
+            >
+              <Label
+                value="✨ A strange golden memory has appeared somewhere. Search the world."
+                fontSize={12}
+                color={GOLD}
+                textAlign="middle-center"
+              />
+            </UiEntity>
+          )}
+          {Date.now() < leaveTraceHintUntil && (
+            <UiEntity
+              uiTransform={{ padding: { top: 8, bottom: 8, left: 20, right: 20 } }}
+              uiBackground={{ color: Color4.fromHexString('#2a2418f2') }}
+            >
+              <Label value="Leave a memory on a Memory Stone for the next explorer." fontSize={12} color={CREAM} textAlign="middle-center" />
+            </UiEntity>
+          )}
+        </UiEntity>
+      )}
+
       {/* bottom: contextual interaction CTA — one at a time, only when the
           player is near an interactive object. No permanent button. */}
       {!stoneOpen && interactionState.target && (
@@ -270,15 +425,20 @@ const uiComponent = () => {
             onMouseDown={() => {
               const t = interactionState.target
               if (!t) return
-              if (t.type === 'stone') {
+              if (t.type === 'portal') {
+                const r = todayRealm()
+                if (r) {
+                  startedExpedition = true
+                  void enterRealm(r)
+                }
+              } else if (t.type === 'stone') {
                 selectStone(t.id)
               } else if (t.type === 'guardian') {
                 void dispelGuardian(t.id as ExpeditionFragmentId)
               } else if (t.type === 'fragment') {
                 void collectExpeditionFragment(t.id as ExpeditionFragmentId)
-              } else if (t.type === 'tree' && expeditionState.state?.completed && !restorationTriggered) {
+              } else if (t.type === 'tree' && expeditionCollectedCount() === 3 && !expeditionCompleted() && !restorationTriggered) {
                 // all memories returned: restore the world
-                restorationTriggered = true
                 void completeExpedition()
               } else {
                 contribute()
@@ -319,7 +479,7 @@ const uiComponent = () => {
             uiBackground={{ color: PANEL }}
           >
             <UiEntity uiTransform={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-              <Label value="TODAY'S MEMORY EXPEDITION" fontSize={13} color={GOLD} textAlign="middle-left" />
+              <Label value="TODAY'S MEMORY" fontSize={13} color={GOLD} textAlign="middle-left" />
               <UiEntity uiTransform={{ flexGrow: 1 }} />
               <Button
                 value="−"
@@ -330,18 +490,44 @@ const uiComponent = () => {
               />
             </UiEntity>
             <Label
-              value={expeditionCompleted() ? 'ALL MEMORIES RECOVERED' : 'Recover the lost memories'}
-              fontSize={16}
+              value={
+                expeditionCompleted()
+                  ? 'MEMORY RESTORED ✨'
+                  : expeditionCollectedCount() === 3
+                    ? 'MEMORY COMPLETE'
+                    : "TODAY'S MEMORY"
+              }
+              fontSize={18}
               color={Color4.White()}
               textAlign="middle-left"
             />
-            {/* dots ● ● ○ */}
+            {/* today's destination */}
+            {!expeditionCompleted() && (
+              <Label
+                value={`Today's destination: ${(todayRealm()?.name ?? '').toUpperCase()}`}
+                fontSize={12}
+                color={Color4.fromHexString('#9fd8ff')}
+                textAlign="middle-left"
+                uiTransform={{ margin: { top: 2 } }}
+              />
+            )}
+            {/* live navigation: where to go next and how far */}
+            {!expeditionCompleted() && nav.hasTarget && (
+              <Label
+                value={`NEXT · ${nav.name.toUpperCase()}${nav.kind === 'shrine' ? ' SHRINE' : ''} · ~${nav.distance}m`}
+                fontSize={14}
+                color={Color4.fromHexString('#9fd8ff')}
+                textAlign="middle-left"
+                uiTransform={{ margin: { top: 2 } }}
+              />
+            )}
+            {/* progress dots ● ● ○ */}
             <UiEntity uiTransform={{ display: 'flex', flexDirection: 'row', margin: { top: 6, bottom: 6 } }}>
               {expeditionFragments().map((f) => (
                 <Label
                   key={f.id}
                   value={f.collected ? '●' : '○'}
-                  fontSize={22}
+                  fontSize={24}
                   color={f.collected ? GOLD : CREAM}
                   textAlign="middle-left"
                   uiTransform={{ margin: { right: 8 } }}
@@ -355,17 +541,82 @@ const uiComponent = () => {
                 uiTransform={{ margin: { left: 4 } }}
               />
             </UiEntity>
-            <Label
-              value={
-                expeditionCompleted()
-                  ? `You restored the garden. ${expeditionTodayCompletions()} ${expeditionTodayCompletions() === 1 ? 'explorer' : 'explorers'} today.`
-                  : 'Find the fragments. Return them to the Tree.'
-              }
-              fontSize={12}
-              color={CREAM}
-              textAlign="middle-left"
-              textWrap="wrap"
-            />
+            {/* the one clear objective: enter, journey, restore, or done */}
+            {expeditionCompleted() ? (
+              <UiEntity uiTransform={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
+                <Label
+                  value={
+                    expeditionTodayCompletions() >= 2
+                      ? `You and ${expeditionTodayCompletions() - 1} ${expeditionTodayCompletions() - 1 === 1 ? 'explorer' : 'explorers'} restored it together today.`
+                      : `You restored the memory. ${expeditionTodayCompletions()} ${expeditionTodayCompletions() === 1 ? 'explorer' : 'explorers'} completed it today.`
+                  }
+                  fontSize={12}
+                  color={CREAM}
+                  textAlign="middle-left"
+                  textWrap="wrap"
+                />
+                <Label
+                  value="A new memory will appear tomorrow. Return to discover it."
+                  fontSize={13}
+                  color={Color4.fromHexString('#9fd8ff')}
+                  textAlign="middle-left"
+                  uiTransform={{ margin: { top: 6 } }}
+                />
+                <Button
+                  value="RETURN TO HUB"
+                  variant="primary"
+                  fontSize={18}
+                  uiTransform={{ width: '100%', height: 56, margin: { top: 10 } }}
+                  onMouseDown={() => void returnToHub()}
+                />
+              </UiEntity>
+            ) : expeditionCollectedCount() === 3 ? (
+              <UiEntity uiTransform={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
+                <Label
+                  value="All 3 memories found. Return to the Memory Tree to restore them."
+                  fontSize={12}
+                  color={CREAM}
+                  textAlign="middle-left"
+                  textWrap="wrap"
+                />
+                <Button
+                  value="RESTORE MEMORY — RETURN TO HUB"
+                  variant="primary"
+                  fontSize={17}
+                  uiTransform={{ width: '100%', height: 56, margin: { top: 10 } }}
+                  onMouseDown={restoreAndReturn}
+                />
+              </UiEntity>
+            ) : !startedExpedition ? (
+              <UiEntity uiTransform={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
+                <Label
+                  value={`A memory has disappeared in ${todayRealm()?.name ?? 'a distant realm'}. 3 memories wait there.`}
+                  fontSize={12}
+                  color={CREAM}
+                  textAlign="middle-left"
+                  textWrap="wrap"
+                />
+                <Button
+                  value="ENTER REALM"
+                  variant="primary"
+                  fontSize={18}
+                  uiTransform={{ width: '100%', height: 56, margin: { top: 10 } }}
+                  onMouseDown={() => {
+                    startedExpedition = true
+                    const r = todayRealm()
+                    if (r) void enterRealm(r)
+                  }}
+                />
+              </UiEntity>
+            ) : (
+              <Label
+                value={nextObjectiveText()}
+                fontSize={12}
+                color={Color4.fromHexString('#9fd8ff')}
+                textAlign="middle-left"
+                textWrap="wrap"
+              />
+            )}
           </UiEntity>
         </UiEntity>
       )}
@@ -389,6 +640,112 @@ const uiComponent = () => {
             uiTransform={{ width: 260, height: 44 }}
             onMouseDown={() => (expeditionPanelCollapsed = false)}
           />
+        </UiEntity>
+      )}
+
+      {/* Memory Journal: lightweight progression + retention. All rows are
+          server-derived (never invented). Toggled from a small top-right pill. */}
+      {!stoneOpen && (
+        <UiEntity
+          uiTransform={{
+            positionType: 'absolute',
+            position: { top: 96, right: 16 },
+            display: 'flex'
+          }}
+        >
+          <Button
+            value={journalOpen ? 'CLOSE' : 'JOURNAL'}
+            variant="secondary"
+            fontSize={13}
+            uiTransform={{ width: 104, height: 40 }}
+            onMouseDown={() => (journalOpen = !journalOpen)}
+          />
+        </UiEntity>
+      )}
+      {!stoneOpen && journalOpen && (
+        <UiEntity
+          uiTransform={{
+            positionType: 'absolute',
+            position: { top: 150 },
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'row',
+            justifyContent: 'center'
+          }}
+        >
+          <UiEntity
+            uiTransform={{
+              width: 320,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'stretch',
+              padding: { top: 12, bottom: 12, left: 14, right: 14 }
+            }}
+            uiBackground={{ color: PANEL }}
+          >
+            <UiEntity uiTransform={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+              <Label value="MEMORY JOURNAL" fontSize={14} color={GOLD} textAlign="middle-left" />
+              <UiEntity uiTransform={{ flexGrow: 1 }} />
+              <Button
+                value="−"
+                variant="secondary"
+                fontSize={16}
+                uiTransform={{ width: 36, height: 36 }}
+                onMouseDown={() => (journalOpen = false)}
+              />
+            </UiEntity>
+
+            <Label value="TODAY" fontSize={12} color={GOLD} textAlign="middle-left" uiTransform={{ margin: { top: 10 } }} />
+            <Label
+              value={`${todayRealm()?.name ?? 'The Garden'}`}
+              fontSize={12}
+              color={Color4.fromHexString('#9fd8ff')}
+              textAlign="middle-left"
+              uiTransform={{ margin: { top: 2, bottom: 4 } }}
+            />
+            {expeditionFragments().map((f, i) => (
+              <Label
+                key={f.id}
+                value={f.collected ? '✓  Memory found' : `○  Memory ${i + 1} of 3`}
+                fontSize={13}
+                color={f.collected ? GOLD : CREAM}
+                textAlign="middle-left"
+                uiTransform={{ margin: { top: 3 } }}
+              />
+            ))}
+            <Label
+              value={expeditionCompleted() ? '✓  Memory restored' : '○  Restoration'}
+              fontSize={13}
+              color={expeditionCompleted() ? GOLD : CREAM}
+              textAlign="middle-left"
+              uiTransform={{ margin: { top: 3 } }}
+            />
+
+            <Label value="WORLD" fontSize={12} color={GOLD} textAlign="middle-left" uiTransform={{ margin: { top: 12 } }} />
+            <Label
+              value={`Memory Level ${livingMemoryLevel()} · ${livingMemoryLevelName()}`}
+              fontSize={13}
+              color={Color4.fromHexString('#9fd8ff')}
+              textAlign="middle-left"
+              uiTransform={{ margin: { top: 2 } }}
+            />
+            <Label
+              value={`${livingCommunityActivity()?.completedExpeditions ?? 0} memories restored by explorers today`}
+              fontSize={12}
+              color={CREAM}
+              textAlign="middle-left"
+              uiTransform={{ margin: { top: 2 } }}
+            />
+            {livingRareLocation() !== null && (
+              <Label
+                value={livingRareDiscovered() ? 'RARE MEMORY · FOUND ✨' : 'RARE MEMORY · NOT YET FOUND'}
+                fontSize={13}
+                color={livingRareDiscovered() ? GOLD : Color4.fromHexString('#9fd8ff')}
+                textAlign="middle-left"
+                uiTransform={{ margin: { top: 2 } }}
+              />
+            )}
+          </UiEntity>
         </UiEntity>
       )}
 

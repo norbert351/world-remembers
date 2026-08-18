@@ -11,7 +11,7 @@
 import { TREE } from './config'
 import { STONES } from './config'
 
-export type InteractionType = 'mission' | 'tree' | 'stone' | 'guardian' | 'fragment'
+export type InteractionType = 'mission' | 'tree' | 'stone' | 'guardian' | 'fragment' | 'portal'
 
 export interface InteractionTarget {
   id: string

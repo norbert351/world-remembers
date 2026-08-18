@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 import { parseLivingWorld, resetLivingWorld, livingWorldState } from '../src/living-world'
 import { memoryLevelFor, landmarkStageFor, rareLocationForDay, LOCATION_REACTIONS, isLocationReactionId } from '../shared/world-memory'
-import { ALL_FRAGMENT_IDS } from '../shared/expedition'
+import { ALL_OBJECTIVE_IDS } from '../shared/realms'
 
 const validBody = {
   contributions: 100,
@@ -76,12 +76,12 @@ test('landmark stage progression', () => {
 })
 
 test('rare location is deterministic and unique per day', () => {
-  const d1 = rareLocationForDay('2026-08-16', ALL_FRAGMENT_IDS)
-  const d1b = rareLocationForDay('2026-08-16', ALL_FRAGMENT_IDS)
-  const d2 = rareLocationForDay('2026-08-17', ALL_FRAGMENT_IDS)
+  const d1 = rareLocationForDay('2026-08-16', ALL_OBJECTIVE_IDS)
+  const d1b = rareLocationForDay('2026-08-16', ALL_OBJECTIVE_IDS)
+  const d2 = rareLocationForDay('2026-08-17', ALL_OBJECTIVE_IDS)
   assert.equal(d1, d1b)
-  assert.ok(ALL_FRAGMENT_IDS.includes(d1))
-  assert.ok(ALL_FRAGMENT_IDS.includes(d2))
+  assert.ok(ALL_OBJECTIVE_IDS.includes(d1))
+  assert.ok(ALL_OBJECTIVE_IDS.includes(d2))
 })
 
 test('location reaction whitelist', () => {

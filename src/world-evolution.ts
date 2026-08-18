@@ -13,7 +13,7 @@ import {
 } from '@dcl/sdk/ecs'
 import { Color3, Color4, Vector3 } from '@dcl/sdk/math'
 import { levelVisuals, TREE } from './config'
-import { FRAGMENT_LOCATIONS, type ExpeditionFragmentId } from '../shared/expedition'
+import { fragmentLocation } from '../shared/expedition'
 import {
   livingCommunityActivity,
   livingLandmarkStage,
@@ -122,7 +122,8 @@ export function applyRareMemory(): void {
   if (!loc) return
 
   if (rareSeed === null && !discovered) {
-    const pos = FRAGMENT_LOCATIONS[loc as ExpeditionFragmentId]
+    const pos = fragmentLocation(loc)
+    if (!pos) return
     rareSeed = engine.addEntity()
     Transform.create(rareSeed, {
       position: Vector3.create(pos.x, 0.5, pos.z),
@@ -140,7 +141,8 @@ export function applyRareMemory(): void {
     rareSeed = null
     // a soft lingering glow marks where it was found
     if (rareGlow === null && loc) {
-      const pos = FRAGMENT_LOCATIONS[loc as ExpeditionFragmentId]
+      const pos = fragmentLocation(loc)
+      if (!pos) return
       rareGlow = engine.addEntity()
       Transform.create(rareGlow, {
         position: Vector3.create(pos.x, 0.05, pos.z),

@@ -23,22 +23,27 @@ import {
   dailySeed,
   dayKeyFromDate,
   expeditionFromServer,
+  fragmentLocation,
   fragmentsForDay,
-  FRAGMENT_LOCATIONS,
   isFragmentId,
+  realmForExpeditionDay,
   zoneOf
 } from '../shared/expedition'
+import { ALL_OBJECTIVE_IDS, realmOfObjective } from '../shared/realms'
 
 const PLAYER = '0x' + '1'.repeat(40)
 
 function routePayload(day: string, progress: Partial<Record<string, { hits?: number; collected?: boolean }>> = {}) {
+  const realm = realmForExpeditionDay(day)
   const route = fragmentsForDay(day)
   return {
     day,
     seed: dailySeed(day),
+    realm: { id: realm.id, name: realm.name },
     fragments: route.map((id) => ({
       id,
-      location: FRAGMENT_LOCATIONS[id],
+      location: fragmentLocation(id) ?? { x: 0, z: 0 },
+      realmId: realm.id,
       hits: progress[id]?.hits ?? 0,
       collected: progress[id]?.collected ?? false
     })),
@@ -70,18 +75,27 @@ test('routes differ between days and use valid fragment ids', () => {
   assert.ok(sets.size >= 2, 'not all days identical')
 })
 
-test('all fragment locations are inside the 32x32 world', () => {
-  for (const id of Object.keys(FRAGMENT_LOCATIONS)) {
-    const { x, z } = FRAGMENT_LOCATIONS[id as keyof typeof FRAGMENT_LOCATIONS]
-    assert.ok(x >= 0.5 && x <= 31.5, `${id} x in bounds`)
-    assert.ok(z >= 0.5 && z <= 31.5, `${id} z in bounds`)
+// One realm per day, three objectives within that realm, all inside the
+// expanded World scene (0..192m) and within a realm-local region.
+test('all objective locations are inside the World and within their realm', () => {
+  for (const id of ALL_OBJECTIVE_IDS) {
+    const pos = fragmentLocation(id)
+    assert.ok(pos, `${id} has a position`)
+    assert.ok(pos!.x >= 0.5 && pos!.x <= 191.5, `${id} x in bounds`)
+    assert.ok(pos!.z >= 0.5 && pos!.z <= 191.5, `${id} z in bounds`)
+    const realm = realmOfObjective(id)
+    assert.ok(realm, `${id} belongs to a realm`)
+    // realm-local coords stay inside the 48x48 region
+    const obj = realm!.objectives.find((o) => o.id === id)
+    assert.ok(obj!.local.x >= 0 && obj!.local.x <= 48, `${id} local x`)
+    assert.ok(obj!.local.z >= 0 && obj!.local.z <= 48, `${id} local z`)
   }
 })
 
-test('zone labels map correctly', () => {
-  assert.equal(zoneOf('g1'), 'GARDEN')
-  assert.equal(zoneOf('l1'), 'LIGHTHOUSE')
-  assert.equal(zoneOf('m1'), 'MEMORY AREA')
+test('zone labels map to the owning realm name', () => {
+  const realm = realmForExpeditionDay('2026-08-16')
+  const id = realm.objectives[0].id
+  assert.equal(zoneOf(id), realm.name)
 })
 
 test('expedition loads and applies server state', async () => {

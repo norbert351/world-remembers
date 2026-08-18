@@ -20,7 +20,7 @@ import {
   Transform
 } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
-import { FRAGMENT_LOCATIONS, type ExpeditionFragmentId } from '../shared/expedition'
+import { fragmentLocation, type ExpeditionFragmentId } from '../shared/expedition'
 import { collectFragment as collectFragmentAction, expeditionHits, expeditionIsCollected } from './expedition'
 
 const MOTES = 3
@@ -37,6 +37,11 @@ export interface FragmentRig {
   collected: boolean
   bobPhase: number
   pulsePhase: number
+  // beacon: a subtle emissive pillar + ground ring so the site is
+  // discoverable from across the world, not only within interaction range
+  beacon: { pillar: Entity; ring: Entity } | null
+  // last hit count we styled the guardian for, so we only re-skin on change
+  lastShownHits: number
 }
 
 const rigs: FragmentRig[] = []
@@ -66,9 +71,42 @@ function makeMotes(parent: Entity, count: number, radius: number, color: Color3,
   return out
 }
 
+// The location beacon: a tall slim emissive pillar rising from a wide soft
+// ground ring. Easy to spot across the island, reads as "a memory waits
+// here", mobile-friendly (two primitives, no colliders, no animations).
+function makeBeacon(root: Entity): { pillar: Entity; ring: Entity } {
+  const ring = engine.addEntity()
+  Transform.create(ring, {
+    parent: root,
+    position: Vector3.create(0, 0.02, 0),
+    scale: Vector3.create(1, 0.02, 1)
+  })
+  MeshRenderer.setCylinder(ring, 1.6, 1.6)
+  Material.setPbrMaterial(ring, {
+    emissiveColor: Color3.fromHexString('#9fd8ff'),
+    emissiveIntensity: 0.9,
+    albedoColor: Color4.fromHexString('#17304533')
+  })
+
+  const pillar = engine.addEntity()
+  Transform.create(pillar, {
+    parent: root,
+    position: Vector3.create(0, 1.1, 0),
+    scale: Vector3.create(1, 1, 1)
+  })
+  MeshRenderer.setCylinder(pillar, 0.06, 0.12)
+  Material.setPbrMaterial(pillar, {
+    emissiveColor: Color3.fromHexString('#9fd8ff'),
+    emissiveIntensity: 1.4,
+    albedoColor: Color4.fromHexString('#9fd8ff44')
+  })
+
+  return { pillar, ring }
+}
+
 // Create one expedition location: guardian + hidden fragment.
 export function createExpeditionSite(id: ExpeditionFragmentId): FragmentRig {
-  const loc = FRAGMENT_LOCATIONS[id]
+  const loc = fragmentLocation(id) ?? { x: 0, z: 0 }
   const root = engine.addEntity()
   Transform.create(root, { position: Vector3.create(loc.x, 0, loc.z) })
 
@@ -169,10 +207,46 @@ export function createExpeditionSite(id: ExpeditionFragmentId): FragmentRig {
     motes: [...guardianMotes, ...fragmentMotes],
     collected: false,
     bobPhase: Math.random() * Math.PI * 2,
-    pulsePhase: 0
+    pulsePhase: 0,
+    beacon: null,
+    lastShownHits: -1
   }
+  // beacon present while the site is active (not collected); removed when
+  // the fragment is collected
+  rig.beacon = makeBeacon(root)
   rigs.push(rig)
+  rig.lastShownHits = -1
   return rig
+}
+
+// A guardian's visual instability stage for a given hit count (pure, exported
+// for tests). 0 = calm dark, 1..2 = heating up and turbulent, 3 = defeated but
+// not yet dissolved (bright + shaking before the fragment is revealed).
+export function guardianStageFor(hits: number): { c: string; i: number; s: number } {
+  const stages: Record<number, { c: string; i: number; s: number }> = {
+    0: { c: '#2a2140', i: 0.6, s: 1 },
+    1: { c: '#8a4d2a', i: 1.2, s: 1.1 },
+    2: { c: '#e0843c', i: 1.9, s: 1.06 },
+    3: { c: '#ffc46b', i: 2.8, s: 1 }
+  }
+  return stages[Math.min(hits, 3)] ?? stages[0]
+}
+
+// Apply the escalation to a guardian's live material + scale. Runs each visual
+// tick but early-returns when the hit count hasn't changed (cheap).
+function styleGuardian(rig: FragmentRig): void {
+  if (!rig.guardian) return
+  const hits = expeditionHits(rig.id)
+  if (hits === rig.lastShownHits) return
+  rig.lastShownHits = hits
+  const st = guardianStageFor(hits)
+  const g = Transform.getMutable(rig.guardian)
+  g.scale = Vector3.create(st.s, st.s, st.s)
+  const mat = Material.getFlatMutable(rig.guardian)
+  if (mat) {
+    mat.emissiveColor = Color3.fromHexString(st.c)
+    mat.emissiveIntensity = st.i
+  }
 }
 
 // Sync all sites against server state. Called after load and after every
@@ -182,6 +256,13 @@ export function syncExpeditionSites(): void {
     const collected = expeditionIsCollected(rig.id)
     const hits = expeditionHits(rig.id)
     const guardianCleared = hits >= 3
+
+    // remove the beacon once the site is collected (or already was)
+    if (collected && rig.beacon) {
+      if (engine.getEntityState(rig.beacon.pillar) !== EntityState.Removed) engine.removeEntity(rig.beacon.pillar)
+      if (engine.getEntityState(rig.beacon.ring) !== EntityState.Removed) engine.removeEntity(rig.beacon.ring)
+      rig.beacon = null
+    }
 
     if (collected !== rig.collected) {
       rig.collected = collected
@@ -212,6 +293,7 @@ export function expeditionVisualSystem(dt: number): void {
     rig.pulsePhase += dt * 2.2
 
     if (rig.guardian) {
+      styleGuardian(rig)
       const g = Transform.getMutable(rig.guardian)
       const sway = Math.sin(rig.bobPhase * 0.6) * GUARDIAN_SWAY
       g.position.y = 1.6 + sway * 0.25

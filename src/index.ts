@@ -75,7 +75,12 @@ import {
 } from './living-world'
 import { syncLivingWorld } from './world-evolution'
 import type { MissionState } from '../shared/mission'
-import { FRAGMENT_LOCATIONS } from '../shared/expedition'
+import { fragmentLocation } from '../shared/expedition'
+import { missionTrailSystem, syncMissionTrail } from './mission-trail'
+import { buildRealmEnvironment } from './realm-environment'
+import { enterRealm } from './realm-portal'
+import { realmById, type RealmDefinition } from '../shared/realms'
+import { expeditionCompleted } from './expedition'
 
 export function main() {
   // fixed skybox so every visitor sees the stage mood consistently
@@ -144,6 +149,7 @@ export function main() {
   engine.addSystem((dt) => tickRitual(dt))
   engine.addSystem((dt) => tickOnboarding(dt))
   engine.addSystem(proximitySystem)
+  engine.addSystem(missionTrailSystem)
 
   // the environment renders immediately; world state syncs in the background
   void loadWorldState()
@@ -152,9 +158,12 @@ export function main() {
     syncMissionCompletion()
     refreshInteraction()
   })
-  // expedition: spawn today's sites, then sync them against server state
+  // expedition: spawn today's sites in the realm, build the realm, wire nav
   void loadExpedition().then(() => {
+    const realm = currentExpRealm()
+    if (realm) buildRealmEnvironment(realm)
     setupExpeditionSites()
+    syncMissionTrail()
     refreshInteraction()
   })
   // living world: memory level, landmark, rare memory, daily pulse
@@ -194,7 +203,7 @@ function setupExpeditionSites(): void {
     } else {
       // the guardian is the current objective; the fragment becomes the
       // target once the guardian is cleared
-      const loc = FRAGMENT_LOCATIONS[f.id]
+      const loc = fragmentLocation(f.id) ?? { x: 0, z: 0 }
       addExpeditionTarget({
         id: `guardian-${f.id}`,
         type: 'guardian',
@@ -207,14 +216,39 @@ function setupExpeditionSites(): void {
       })
     }
   }
+  // the Hub->Realm gate: a physical doorway at the hub's east edge. Walking
+  // up to it (or tapping ENTER on the card) teleports into today's realm.
+  const realm = currentExpRealm()
+  if (realm && !expeditionCompleted()) {
+    addExpeditionTarget({
+      id: 'portal-hub',
+      type: 'portal',
+      position: HUB_GATE,
+      radius: 6,
+      label: `ENTER ${realm.name.toUpperCase()}`,
+      hint: 'Step into today\'s Memory Realm',
+      priority: 2,
+      enabled: true
+    })
+  }
   syncExpeditionSites()
   refreshInteraction()
 }
 
-// short hit label: "2 / 3 MEMORY ENERGY"
+// Today's realm (from the server's expedition state), or undefined.
+function currentExpRealm(): RealmDefinition | undefined {
+  const id = expeditionState.state?.realm.id
+  return id ? realmById(id) : undefined
+}
+
+// The visible Hub->Realm gate position (scene-local, east of the plaza).
+export const HUB_GATE = { x: 34, z: 16 }
+
+// short hit label with dispel progress dots: "● ● ○ — 1/3 hits"
 function expeditionHitsLabel(id: string): string {
   const hits = expeditionFragments().find((f) => f.id === id)?.hits ?? 0
-  return `${hits} / 3`
+  const dots = '●'.repeat(hits) + '○'.repeat(Math.max(0, 3 - hits))
+  return `${dots}  ${hits} / 3 hits`
 }
 
 function refreshInteraction(): void {
@@ -225,7 +259,7 @@ function refreshInteraction(): void {
   // G5: the undiscovered Rare Memory is the top expedition-adjacent target
   const rareLoc = livingRareLocation()
   if (rareLoc !== null && !livingRareDiscovered()) {
-    const pos = FRAGMENT_LOCATIONS[rareLoc as keyof typeof FRAGMENT_LOCATIONS]
+    const pos = fragmentLocation(rareLoc)
     if (pos) {
       addExpeditionTarget({
         id: `rare-${rareLoc}`,

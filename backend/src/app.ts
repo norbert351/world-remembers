@@ -10,8 +10,10 @@ import {
   EXPEDITION,
   dailySeed,
   dayKeyFromDate,
+  fragmentLocation,
   fragmentsForDay,
   isFragmentId,
+  realmForExpeditionDay,
   type ExpeditionFragmentId
 } from '../../shared/expedition'
 import {
@@ -20,7 +22,7 @@ import {
   rareLocationForDay,
   isLocationReactionId
 } from '../../shared/world-memory'
-import { ALL_FRAGMENT_IDS } from '../../shared/expedition'
+import { ALL_OBJECTIVE_IDS } from '../../shared/realms'
 import {
   addGuardianHit,
   collectFragment,
@@ -127,8 +129,11 @@ async function missionPayload(pool: Pool): Promise<{ mission: Record<string, unk
 
 // Today's fragment route and the player's progress against it.
 // Everything derives from the date (seed) + the player's progress row.
+// The realm is deterministic for the day; the client renders it as-is and
+// can never choose a different destination.
 async function expeditionPayload(pool: Pool, playerId: string): Promise<Record<string, unknown>> {
   const day = dayKeyFromDate(new Date())
+  const realm = realmForExpeditionDay(day)
   const route = fragmentsForDay(day)
   const row = await getExpeditionRow(pool, playerId, day)
   const { rows } = await pool.query<{ count: number }>(
@@ -138,8 +143,11 @@ async function expeditionPayload(pool: Pool, playerId: string): Promise<Record<s
   return {
     day,
     seed: dailySeed(day),
+    realm: { id: realm.id, name: realm.name },
     fragments: route.map((id, slot) => ({
       id,
+      location: fragmentLocation(id) ?? { x: 0, z: 0 },
+      realmId: realm.id,
       hits: (row.guardianHits >> (slot * 2)) & 3,
       collected: (row.collected & (1 << slot)) !== 0
     })),
@@ -189,7 +197,7 @@ export function createApp(pool: Pool) {
       const level = memoryLevelFor(activity)
       const landmark = landmarkStageFor(activity.completedExpeditions)
       const day = dayKeyFromDate(new Date())
-      const rareLocation = rareLocationForDay(day, ALL_FRAGMENT_IDS)
+      const rareLocation = rareLocationForDay(day, ALL_OBJECTIVE_IDS)
       const rare = await getRareMemory(pool, day, rareLocation)
       // the daily pulse "happened" once today's first expedition completed
       const pulse = activity.completedExpeditions > 0
@@ -426,7 +434,7 @@ export function createApp(pool: Pool) {
     }
     try {
       const day = dayKeyFromDate(new Date())
-      const rareLocation = rareLocationForDay(day, ALL_FRAGMENT_IDS)
+      const rareLocation = rareLocationForDay(day, ALL_OBJECTIVE_IDS)
       if (parsed.fragmentId !== rareLocation) {
         res.status(404).json({ error: 'not_todays_rare_memory' })
         return

@@ -13,10 +13,13 @@ import {
   EXPEDITION,
   dailySeed,
   dayKeyFromDate,
+  fragmentLocation,
   fragmentsForDay,
+  realmForExpeditionDay,
   zoneOf,
   type ExpeditionFragmentId
 } from '../../shared/expedition'
+import { ALL_OBJECTIVE_IDS, objectiveWorld } from '../../shared/realms'
 import type { Pool } from 'pg'
 
 const devUrl = process.env.DATABASE_URL
@@ -97,21 +100,22 @@ test('fragment locations change between days', () => {
   const d1 = fragmentsForDay('2026-08-16')
   const d2 = fragmentsForDay('2026-08-17')
   const d3 = fragmentsForDay('2026-08-18')
-  // all three days pick from the valid pool
+  // all three days pick from the valid objective pool (any realm)
   for (const d of [d1, d2, d3]) {
     assert.equal(d.length, 3)
-    for (const id of d) assert.ok(id in { g1: 1, g2: 1, g3: 1, g4: 1, l1: 1, l2: 1, l3: 1, m1: 1, m2: 1, m3: 1 })
+    for (const id of d) assert.ok(ALL_OBJECTIVE_IDS.includes(id), `${id} is a real objective`)
   }
-  // not all days are identical
+  // not all days are identical (realm rotation keeps routes fresh)
   const sets = new Set([d1.join(','), d2.join(','), d3.join(',')])
   assert.ok(sets.size >= 2, 'routes should differ across days')
 })
 
-test('fragments spawn only at valid locations (all within 32x32 world)', () => {
+test('fragments spawn at valid world positions (inside the expanded World)', () => {
   const day = dayKeyFromDate(new Date())
   for (const id of fragmentsForDay(day)) {
-    const { x, z } = { x: 0, z: 0 } // location is server-side; ids are the contract
-    assert.ok(x >= 0 && x <= 32 && z >= 0 && z <= 32)
+    const pos = fragmentLocation(id)
+    assert.ok(pos, `${id} has a position`)
+    assert.ok(pos!.x >= 0 && pos!.x <= 192 && pos!.z >= 0 && pos!.z <= 192)
     assert.ok(zoneOf(id).length > 0)
   }
 })
@@ -177,9 +181,11 @@ test('invalid fragment id is rejected', async () => {
   assert.equal(r.body.error, 'invalid_fragment')
 })
 
-test('fragment not in today\'s route is rejected', async () => {
+test('fragment not in the daily route is rejected', async () => {
   const route = (await api(`/expedition?playerId=${PLAYER}`)).body.fragments.map((f: any) => f.id) as ExpeditionFragmentId[]
-  const notInRoute = ['g1', 'g2', 'g3', 'g4', 'l1', 'l2', 'l3', 'm1', 'm2', 'm3'].find((id) => !route.includes(id as ExpeditionFragmentId))
+  // a real objective from another realm is a valid id but not in today's route
+  const notInRoute = ALL_OBJECTIVE_IDS.find((id) => !route.includes(id))!
+  assert.ok(notInRoute, 'found an objective outside the daily route')
   const r = await post('/expedition/dispel', { playerId: PLAYER, fragmentId: notInRoute })
   assert.equal(r.status, 404)
   assert.equal(r.body.error, 'not_in_today_mission')
@@ -296,19 +302,22 @@ test('expedition validator rejects malformed payloads', async () => {
 
 test('expedition validator accepts a valid payload', async () => {
   const { expeditionFromServer } = await import('../../shared/expedition.js')
+  const realm = realmForExpeditionDay('2026-08-16')
+  const [a, b, c] = realm.objectives
   const ok = expeditionFromServer({
     day: '2026-08-16',
     seed: 123,
+    realm: { id: realm.id, name: realm.name },
     fragments: [
-      { id: 'g1', location: { x: 1, z: 2 }, hits: 3, collected: true },
-      { id: 'l2', location: { x: 3, z: 4 }, hits: 0, collected: false },
-      { id: 'm3', location: { x: 5, z: 6 }, hits: 1, collected: false }
+      { id: a.id, location: objectiveWorld(a.id), hits: 3, collected: true },
+      { id: b.id, location: objectiveWorld(b.id), hits: 0, collected: false },
+      { id: c.id, location: objectiveWorld(c.id), hits: 1, collected: false }
     ],
     completed: false,
     todayCompletions: 4
   })
   assert.equal(ok.fragments.length, 3)
-  assert.equal(ok.fragments[0].zone, 'GARDEN')
-  assert.equal(ok.fragments[1].zone, 'LIGHTHOUSE')
+  assert.equal(ok.fragments[0].zone, realm.name)
+  assert.equal(ok.realm.id, realm.id)
   assert.equal(ok.todayCompletions, 4)
 })

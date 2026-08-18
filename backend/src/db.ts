@@ -1,9 +1,17 @@
 // Database access. PostgreSQL is the source of truth for contributions.
 import { Pool } from 'pg'
 
+// Neon requires SSL. pg 8.23 treats `sslmode=require` in the connection
+// string as an alias for `verify-full` (see its deprecation warning), which
+// fails CA verification against Neon's pooled route and breaks connections
+// to secondary databases (the integration-test DB) even though the primary
+// one works. Enable TLS explicitly with rejectUnauthorized:false — still
+// fully encrypted in transit, matching "preserve SSL where configured".
 export function createPool(connectionString: string | undefined): Pool {
+  const needsSsl = connectionString !== undefined && /(sslmode|neon\.tech)/i.test(connectionString)
   return new Pool({
     connectionString,
+    ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
     max: 10,
     connectionTimeoutMillis: 5000
   })

@@ -15,12 +15,16 @@ import {
   rareLocationForDay,
   LOCATION_REACTION_IDS
 } from '../../shared/world-memory'
-import { ALL_FRAGMENT_IDS } from '../../shared/expedition'
+import { ALL_OBJECTIVE_IDS } from '../../shared/realms'
+import { fragmentsForDay, dayKeyFromDate } from '../../shared/expedition'
 import type { Pool } from 'pg'
 
 const devUrl = process.env.DATABASE_URL
 assert.ok(devUrl, 'DATABASE_URL must be set (backend/.env)')
 const testUrl = devUrl.replace(/\/[^/]+$/, '/world_remembers_test')
+// two valid (objective) location ids for location-memory tests
+const LOC1 = fragmentsForDay(dayKeyFromDate(new Date()))[0]
+const LOC2 = fragmentsForDay(dayKeyFromDate(new Date()))[1]
 
 const PLAYER = '0x' + '1'.repeat(40)
 
@@ -153,7 +157,7 @@ test('completed expeditions drive the landmark stage in GET /world', async () =>
 // --- Location memories (G4) -------------------------------------------------
 
 test('leave a location memory', async () => {
-  const r = await post('/locations/g1/memories', { playerId: PLAYER, reaction: 'remembered' })
+  const r = await post(`/locations/${LOC1}/memories`, { playerId: PLAYER, reaction: 'remembered' })
   assert.equal(r.status, 201)
   assert.equal(r.body.success, true)
   assert.equal(r.body.memoryCount, 1)
@@ -161,15 +165,15 @@ test('leave a location memory', async () => {
 })
 
 test('duplicate location memory is rejected with the stored reaction', async () => {
-  await post('/locations/g1/memories', { playerId: PLAYER, reaction: 'growing' })
-  const dup = await post('/locations/g1/memories', { playerId: PLAYER, reaction: 'beautiful' })
+  await post(`/locations/${LOC1}/memories`, { playerId: PLAYER, reaction: 'growing' })
+  const dup = await post(`/locations/${LOC1}/memories`, { playerId: PLAYER, reaction: 'beautiful' })
   assert.equal(dup.status, 409)
   assert.equal(dup.body.error, 'already_remembered')
   assert.equal(dup.body.memory.reaction, 'growing')
 })
 
 test('invalid location reaction is rejected', async () => {
-  const r = await post('/locations/g1/memories', { playerId: PLAYER, reaction: 'hacked' })
+  const r = await post(`/locations/${LOC1}/memories`, { playerId: PLAYER, reaction: 'hacked' })
   assert.equal(r.status, 400)
 })
 
@@ -179,24 +183,24 @@ test('unknown location is rejected', async () => {
 })
 
 test('unexpected fields are rejected', async () => {
-  const r = await post('/locations/g1/memories', { playerId: PLAYER, reaction: 'growing', extra: true })
+  const r = await post(`/locations/${LOC1}/memories`, { playerId: PLAYER, reaction: 'growing', extra: true })
   assert.equal(r.status, 400)
   assert.equal(r.body.error, 'unexpected fields are not allowed')
 })
 
 test('multiple players can remember the same location', async () => {
-  await post('/locations/g1/memories', { playerId: player(1), reaction: 'remembered' })
-  await post('/locations/g1/memories', { playerId: player(2), reaction: 'growing' })
-  await post('/locations/g1/memories', { playerId: player(3), reaction: 'beautiful' })
-  const { body } = await api('/locations/g1/memories')
+  await post(`/locations/${LOC1}/memories`, { playerId: player(1), reaction: 'remembered' })
+  await post(`/locations/${LOC1}/memories`, { playerId: player(2), reaction: 'growing' })
+  await post(`/locations/${LOC1}/memories`, { playerId: player(3), reaction: 'beautiful' })
+  const { body } = await api(`/locations/${LOC1}/memories`)
   assert.equal(body.memoryCount, 3)
   assert.equal(body.memories.length, 3)
 })
 
 test('location memories persist across reloads', async () => {
-  await post('/locations/l1/memories', { playerId: PLAYER, reaction: 'iwashere' })
+  await post(`/locations/${LOC2}/memories`, { playerId: PLAYER, reaction: 'iwashere' })
   // fresh read (simulated reload) still shows it
-  const { body } = await api('/locations/l1/memories')
+  const { body } = await api(`/locations/${LOC2}/memories`)
   assert.equal(body.memoryCount, 1)
   assert.equal(body.memories[0].reaction, 'iwashere')
 })
@@ -204,20 +208,20 @@ test('location memories persist across reloads', async () => {
 // --- Rare memory (G5) -------------------------------------------------------
 
 test('rare location is deterministic per day', () => {
-  const d1a = rareLocationForDay('2026-08-16', ALL_FRAGMENT_IDS)
-  const d1b = rareLocationForDay('2026-08-16', ALL_FRAGMENT_IDS)
-  const d2 = rareLocationForDay('2026-08-17', ALL_FRAGMENT_IDS)
+  const d1a = rareLocationForDay('2026-08-16', ALL_OBJECTIVE_IDS)
+  const d1b = rareLocationForDay('2026-08-16', ALL_OBJECTIVE_IDS)
+  const d2 = rareLocationForDay('2026-08-17', ALL_OBJECTIVE_IDS)
   assert.equal(d1a, d1b)
-  assert.ok(ALL_FRAGMENT_IDS.includes(d1a as never))
-  assert.ok(ALL_FRAGMENT_IDS.includes(d2 as never))
+  assert.ok(ALL_OBJECTIVE_IDS.includes(d1a as never))
+  assert.ok(ALL_OBJECTIVE_IDS.includes(d2 as never))
   // not always the same location across days
   const days = ['2026-08-16', '2026-08-17', '2026-08-18', '2026-08-19', '2026-08-20', '2026-08-21']
-  assert.ok(new Set(days.map((d) => rareLocationForDay(d, ALL_FRAGMENT_IDS))).size >= 2)
+  assert.ok(new Set(days.map((d) => rareLocationForDay(d, ALL_OBJECTIVE_IDS))).size >= 2)
 })
 
 test('GET /world reports today\'s rare location undiscovered', async () => {
   const { body } = await api('/world')
-  assert.ok(ALL_FRAGMENT_IDS.includes(body.rareMemory.locationId))
+  assert.ok(ALL_OBJECTIVE_IDS.includes(body.rareMemory.locationId))
   assert.equal(body.rareMemory.discovered, false)
 })
 
@@ -237,7 +241,7 @@ test('first discovery wins; duplicates rejected', async () => {
 test('discovering a non-rare location is rejected', async () => {
   const { body } = await api('/world')
   const loc = body.rareMemory.locationId
-  const wrong = ALL_FRAGMENT_IDS.find((id) => id !== loc)
+  const wrong = ALL_OBJECTIVE_IDS.find((id) => id !== loc)
   const r = await post('/world/discover', { playerId: PLAYER, fragmentId: wrong })
   assert.equal(r.status, 404)
   assert.equal(r.body.error, 'not_todays_rare_memory')
@@ -266,7 +270,7 @@ test('client cannot fake world level or event state (no such fields accepted)', 
 })
 
 test('invalid player rejected everywhere', async () => {
-  const r = await post('/locations/g1/memories', { playerId: 'nope', reaction: 'growing' })
+  const r = await post(`/locations/${LOC1}/memories`, { playerId: 'nope', reaction: 'growing' })
   assert.equal(r.status, 400)
   const d = await post('/world/discover', { playerId: 'nope', fragmentId: 'g4' })
   assert.equal(d.status, 400)
