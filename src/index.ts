@@ -52,7 +52,8 @@ import {
   createExpeditionSite,
   expeditionVisualSystem,
   setFragmentIdentityResolver,
-  syncExpeditionSites
+  syncExpeditionSites,
+  updateBeacons
 } from './fragments'
 import {
   expeditionFragments,
@@ -77,6 +78,7 @@ import { syncLivingWorld } from './world-evolution'
 import type { MissionState } from '../shared/mission'
 import { fragmentLocation } from '../shared/expedition'
 import { missionTrailSystem, syncMissionTrail } from './mission-trail'
+import { describeNextTarget, tickNavDirection } from './navigation'
 import { buildRealmEnvironment } from './realm-environment'
 import { enterRealm } from './realm-portal'
 import { realmById, type RealmDefinition } from '../shared/realms'
@@ -288,6 +290,15 @@ function proximitySystem(dt: number): void {
   if (proximityAccum < 0.5) return
   proximityAccum = 0
   refreshInteraction()
+  const p = getPlayer()
+  if (p?.position) {
+    // feed the simple direction + tune the beacons at the same low rate
+    const nav = describeNextTarget({ x: p.position.x, z: p.position.z })
+    if (nav.hasTarget) tickNavDirection(nav.distance)
+    updateBeacons({ x: p.position.x, z: p.position.z })
+  } else {
+    updateBeacons(null)
+  }
 }
 
 // --- daily Memory Pulse (F3) ------------------------------------------------

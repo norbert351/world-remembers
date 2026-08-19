@@ -43,3 +43,40 @@ export function describeNextTarget(player?: { x: number; z: number } | null): Ne
     distance: Math.round(Math.hypot(player.x - pos.x, player.z - pos.z))
   }
 }
+
+// --- simple direction (closer / away) -------------------------------------
+
+export type Approach = 'closer' | 'away' | 'steady'
+
+// Pure. Compares the previous distance to the current one. A negative delta
+// (distance shrank) means the player is getting closer. A small change is
+// treated as steady so the UI doesn't flicker on jitter.
+export function approachFor(prev: number | null, cur: number, threshold = 2): Approach {
+  if (prev === null || !Number.isFinite(prev)) return 'steady'
+  const delta = prev - cur
+  if (delta > threshold) return 'closer'
+  if (delta < -threshold) return 'away'
+  return 'steady'
+}
+
+// The active objective's last-known distance, tracked here so the low-
+// frequency proximity tick can compare across samples. Engine-free.
+let lastNavDistance: number | null = null
+let lastNavApproach: Approach = 'steady'
+
+// Feed a fresh distance sample (the scene calls this on the 0.5s proximity
+// tick). Stores the previous distance and updates the approach reading.
+export function tickNavDirection(distance: number): Approach {
+  lastNavApproach = approachFor(lastNavDistance, distance)
+  lastNavDistance = distance
+  return lastNavApproach
+}
+
+export function navApproach(): Approach {
+  return lastNavApproach
+}
+
+export function resetNavDirection(): void {
+  lastNavDistance = null
+  lastNavApproach = 'steady'
+}

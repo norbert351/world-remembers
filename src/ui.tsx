@@ -29,7 +29,8 @@ import {
 import { fragmentLocation, zoneOf, type ExpeditionFragmentId } from '../shared/expedition'
 import { enterRealm, returnToHub } from './realm-portal'
 import { realmById, objectiveById } from '../shared/realms'
-import { describeNextTarget } from './navigation'
+import { describeNextTarget, navApproach } from './navigation'
+import { describeMissionCard, guardianHitMessage } from './mission-clarity'
 import { startRestoration } from './restoration'
 import {
   livingCommunityActivity,
@@ -108,6 +109,10 @@ let returnPanelSeen = false
 // only; all real progress is server-authoritative). START reveals the
 // trail and focuses the objective.
 let startedExpedition = false
+// guardian per-hit feedback toast + per-fragment last-shown hit tracking
+let guardianToastUntil = 0
+let guardianToastText = ''
+const lastShownHitsByFragment: Record<string, number> = {}
 // brief success banner after a live restoration + when the world level
 // actually ticks up (never faked — only when the real level changes)
 let restorationBannerUntil = 0
@@ -186,6 +191,19 @@ const uiComponent = () => {
 
   // live navigation readout (distance to the next objective / shrine)
   const nav = describeNextTarget(interactionState.player)
+  // contextual, phase-aware mission card (WHAT -> WHERE -> HOW FAR -> DO)
+  const card = describeMissionCard(interactionState.player, startedExpedition)
+  // guardian per-hit feedback: when the server confirms a rise in hits, show
+  // the matching "GUARDIAN WEAKENED / ALMOST FREE" toast (the freed + found
+  // moment is covered by the existing collection toast)
+  for (const f of expeditionFragments()) {
+    const prev = lastShownHitsByFragment[f.id] ?? 0
+    if (f.hits > prev && f.hits >= 1 && f.hits < 3) {
+      guardianToastText = guardianHitMessage(f.hits)
+      guardianToastUntil = Date.now() + TOAST_MS
+    }
+    if (f.hits !== prev) lastShownHitsByFragment[f.id] = f.hits
+  }
   if (completedNow && !lastSeenCompleted) {
     lastSeenCompleted = true
     restorationBannerUntil = Date.now() + 5000
@@ -489,132 +507,78 @@ const uiComponent = () => {
                 onMouseDown={() => (expeditionPanelCollapsed = true)}
               />
             </UiEntity>
+            {/* phase-aware card: WHAT -> WHERE -> HOW FAR -> WHAT TO DO */}
+            <Label value={card.title} fontSize={18} color={Color4.White()} textAlign="middle-left" />
             <Label
-              value={
-                expeditionCompleted()
-                  ? 'MEMORY RESTORED ✨'
-                  : expeditionCollectedCount() === 3
-                    ? 'MEMORY COMPLETE'
-                    : "TODAY'S MEMORY"
-              }
-              fontSize={18}
-              color={Color4.White()}
+              value={card.objective}
+              fontSize={12}
+              color={CREAM}
               textAlign="middle-left"
+              textWrap="wrap"
+              uiTransform={{ margin: { top: 2 } }}
             />
-            {/* today's destination */}
-            {!expeditionCompleted() && (
+            {/* progress: big, obvious */}
+            <Label value={card.progress} fontSize={28} color={GOLD} textAlign="middle-left" uiTransform={{ margin: { top: 4 } }} />
+            {/* WHERE + HOW FAR */}
+            {card.nextWhere && card.howFar !== null && (
+              <UiEntity uiTransform={{ display: 'flex', flexDirection: 'row', alignItems: 'center', margin: { top: 2 } }}>
+                <Label value="NEXT MEMORY" fontSize={11} color={CREAM} textAlign="middle-left" />
+                <Label value={`  ${card.nextWhere} · ${card.distanceLabel}`} fontSize={16} color={Color4.fromHexString('#9fd8ff')} textAlign="middle-left" />
+              </UiEntity>
+            )}
+            {/* direction (closer / away), low-frequency */}
+            {card.direction !== 'steady' && card.phase !== 'guardian' && card.phase !== 'near' && (
               <Label
-                value={`Today's destination: ${(todayRealm()?.name ?? '').toUpperCase()}`}
+                value={card.direction === 'closer' ? '✓ GETTING CLOSER' : "⚠️ YOU'RE MOVING AWAY"}
                 fontSize={12}
-                color={Color4.fromHexString('#9fd8ff')}
+                color={card.direction === 'closer' ? Color4.fromHexString('#8fe3c0') : Color4.fromHexString('#ff9d8a')}
                 textAlign="middle-left"
                 uiTransform={{ margin: { top: 2 } }}
               />
             )}
-            {/* live navigation: where to go next and how far */}
-            {!expeditionCompleted() && nav.hasTarget && (
-              <Label
-                value={`NEXT · ${nav.name.toUpperCase()}${nav.kind === 'shrine' ? ' SHRINE' : ''} · ~${nav.distance}m`}
-                fontSize={14}
-                color={Color4.fromHexString('#9fd8ff')}
-                textAlign="middle-left"
-                uiTransform={{ margin: { top: 2 } }}
+            {/* first-time hint */}
+            {card.hint && <Label value={card.hint} fontSize={12} color={CREAM} textAlign="middle-left" textWrap="wrap" uiTransform={{ margin: { top: 2 } }} />}
+            {/* WHAT TO DO */}
+            {card.action && (
+              <Label value={card.action} fontSize={16} color={GOLD} textAlign="middle-left" textWrap="wrap" uiTransform={{ margin: { top: 6 } }} />
+            )}
+            {/* guardian hit feedback */}
+            {Date.now() < guardianToastUntil && (
+              <Label value={guardianToastText} fontSize={15} color={Color4.fromHexString('#ffc46b')} textAlign="middle-left" uiTransform={{ margin: { top: 6 } }} />
+            )}
+            {/* contextual primary action */}
+            {card.phase === 'enter' && (
+              <Button
+                value="ENTER THE REALM"
+                variant="primary"
+                fontSize={18}
+                uiTransform={{ width: '100%', height: 56, margin: { top: 10 } }}
+                onMouseDown={() => {
+                  startedExpedition = true
+                  const r = todayRealm()
+                  if (r) void enterRealm(r)
+                }}
               />
             )}
-            {/* progress dots ● ● ○ */}
-            <UiEntity uiTransform={{ display: 'flex', flexDirection: 'row', margin: { top: 6, bottom: 6 } }}>
-              {expeditionFragments().map((f) => (
-                <Label
-                  key={f.id}
-                  value={f.collected ? '●' : '○'}
-                  fontSize={24}
-                  color={f.collected ? GOLD : CREAM}
-                  textAlign="middle-left"
-                  uiTransform={{ margin: { right: 8 } }}
-                />
-              ))}
-              <Label
-                value={`${expeditionCollectedCount()} / 3`}
-                fontSize={14}
-                color={GOLD}
-                textAlign="middle-left"
-                uiTransform={{ margin: { left: 4 } }}
+            {card.phase === 'return' && (
+              <Button
+                value="RESTORE TODAY'S MEMORY"
+                variant="primary"
+                fontSize={17}
+                uiTransform={{ width: '100%', height: 56, margin: { top: 10 } }}
+                onMouseDown={restoreAndReturn}
               />
-            </UiEntity>
-            {/* the one clear objective: enter, journey, restore, or done */}
-            {expeditionCompleted() ? (
-              <UiEntity uiTransform={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
-                <Label
-                  value={
-                    expeditionTodayCompletions() >= 2
-                      ? `You and ${expeditionTodayCompletions() - 1} ${expeditionTodayCompletions() - 1 === 1 ? 'explorer' : 'explorers'} restored it together today.`
-                      : `You restored the memory. ${expeditionTodayCompletions()} ${expeditionTodayCompletions() === 1 ? 'explorer' : 'explorers'} completed it today.`
-                  }
-                  fontSize={12}
-                  color={CREAM}
-                  textAlign="middle-left"
-                  textWrap="wrap"
-                />
-                <Label
-                  value="A new memory will appear tomorrow. Return to discover it."
-                  fontSize={13}
-                  color={Color4.fromHexString('#9fd8ff')}
-                  textAlign="middle-left"
-                  uiTransform={{ margin: { top: 6 } }}
-                />
-                <Button
-                  value="RETURN TO HUB"
-                  variant="primary"
-                  fontSize={18}
-                  uiTransform={{ width: '100%', height: 56, margin: { top: 10 } }}
-                  onMouseDown={() => void returnToHub()}
-                />
-              </UiEntity>
-            ) : expeditionCollectedCount() === 3 ? (
-              <UiEntity uiTransform={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
-                <Label
-                  value="All 3 memories found. Return to the Memory Tree to restore them."
-                  fontSize={12}
-                  color={CREAM}
-                  textAlign="middle-left"
-                  textWrap="wrap"
-                />
-                <Button
-                  value="RESTORE MEMORY — RETURN TO HUB"
-                  variant="primary"
-                  fontSize={17}
-                  uiTransform={{ width: '100%', height: 56, margin: { top: 10 } }}
-                  onMouseDown={restoreAndReturn}
-                />
-              </UiEntity>
-            ) : !startedExpedition ? (
-              <UiEntity uiTransform={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
-                <Label
-                  value={`A memory has disappeared in ${todayRealm()?.name ?? 'a distant realm'}. 3 memories wait there.`}
-                  fontSize={12}
-                  color={CREAM}
-                  textAlign="middle-left"
-                  textWrap="wrap"
-                />
-                <Button
-                  value="ENTER REALM"
-                  variant="primary"
-                  fontSize={18}
-                  uiTransform={{ width: '100%', height: 56, margin: { top: 10 } }}
-                  onMouseDown={() => {
-                    startedExpedition = true
-                    const r = todayRealm()
-                    if (r) void enterRealm(r)
-                  }}
-                />
-              </UiEntity>
-            ) : (
-              <Label
-                value={nextObjectiveText()}
-                fontSize={12}
-                color={Color4.fromHexString('#9fd8ff')}
-                textAlign="middle-left"
-                textWrap="wrap"
+            )}
+            {card.phase === 'guardian' && (
+              <Button
+                value="DISPEL"
+                variant="primary"
+                fontSize={20}
+                uiTransform={{ width: '100%', height: 64, margin: { top: 10 } }}
+                onMouseDown={() => {
+                  const next = expeditionFragments().find((f) => !f.collected)
+                  if (next) void dispelGuardian(next.id)
+                }}
               />
             )}
           </UiEntity>

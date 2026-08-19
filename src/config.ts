@@ -76,7 +76,7 @@ export const COLORS = {
 // For the deployed world this must be an HTTPS URL reachable from the
 // Decentraland client (see README).
 export const API = {
-  baseUrl: 'https://usc-locking-drops-eyes.trycloudflare.com'
+  baseUrl: 'https://climb-ave-veterinary-core.trycloudflare.com'
 }
 
 // Memory Stones: id must match shared/stones.ts STONES. Position is the

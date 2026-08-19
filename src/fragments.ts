@@ -71,10 +71,21 @@ function makeMotes(parent: Entity, count: number, radius: number, color: Color3,
   return out
 }
 
+// Realm-specific beacon accent so WHICH realm the objective is in reads at a
+// glance (forest mint, ruins amber, starfall purple/cosmic).
+export function realmBeaconColor(id: ExpeditionFragmentId): Color3 {
+  if (id.startsWith('forgotten_forest')) return Color3.fromHexString('#8fe3c0')
+  if (id.startsWith('lost_ruins')) return Color3.fromHexString('#ffc27a')
+  if (id.startsWith('starfall_island')) return Color3.fromHexString('#c79bff')
+  return Color3.fromHexString('#9fd8ff')
+}
+
 // The location beacon: a tall slim emissive pillar rising from a wide soft
 // ground ring. Easy to spot across the island, reads as "a memory waits
-// here", mobile-friendly (two primitives, no colliders, no animations).
-function makeBeacon(root: Entity): { pillar: Entity; ring: Entity } {
+// here", mobile-friendly (two primitives, no colliders). The pillar height
+// and glow are tuned per distance by updateBeacons (low frequency, no lights,
+// no shadows, no per-frame writes).
+function makeBeacon(root: Entity, color: Color3): { pillar: Entity; ring: Entity } {
   const ring = engine.addEntity()
   Transform.create(ring, {
     parent: root,
@@ -83,7 +94,7 @@ function makeBeacon(root: Entity): { pillar: Entity; ring: Entity } {
   })
   MeshRenderer.setCylinder(ring, 1.6, 1.6)
   Material.setPbrMaterial(ring, {
-    emissiveColor: Color3.fromHexString('#9fd8ff'),
+    emissiveColor: color,
     emissiveIntensity: 0.9,
     albedoColor: Color4.fromHexString('#17304533')
   })
@@ -91,14 +102,14 @@ function makeBeacon(root: Entity): { pillar: Entity; ring: Entity } {
   const pillar = engine.addEntity()
   Transform.create(pillar, {
     parent: root,
-    position: Vector3.create(0, 1.1, 0),
+    position: Vector3.create(0, 1.4, 0),
     scale: Vector3.create(1, 1, 1)
   })
-  MeshRenderer.setCylinder(pillar, 0.06, 0.12)
+  MeshRenderer.setCylinder(pillar, 0.08, 0.14)
   Material.setPbrMaterial(pillar, {
-    emissiveColor: Color3.fromHexString('#9fd8ff'),
-    emissiveIntensity: 1.4,
-    albedoColor: Color4.fromHexString('#9fd8ff44')
+    emissiveColor: color,
+    emissiveIntensity: 1.6,
+    albedoColor: Color4.fromHexString('#ffffff22')
   })
 
   return { pillar, ring }
@@ -213,7 +224,7 @@ export function createExpeditionSite(id: ExpeditionFragmentId): FragmentRig {
   }
   // beacon present while the site is active (not collected); removed when
   // the fragment is collected
-  rig.beacon = makeBeacon(root)
+  rig.beacon = makeBeacon(root, realmBeaconColor(id))
   rigs.push(rig)
   rig.lastShownHits = -1
   return rig
@@ -283,6 +294,35 @@ export function syncExpeditionSites(): void {
       t.scale = Vector3.create(1, 1, 1)
     }
   }
+}
+
+// Low-frequency beacon tuning. Called from the scene's 0.5s proximity tick
+// (never per-frame). Makes the active objective's beacon glow brighter and
+// rise higher as the player approaches, and dims it when far — so "THAT is
+// the memory" stays obvious without any realtime light/shadow or per-frame
+// material writes. Also gives a gentle slow pulse.
+let beaconPhase = 0
+export function updateBeacons(player?: { x: number; z: number } | null): void {
+  beaconPhase += 0.35
+  for (const rig of rigs) {
+    if (!rig.beacon) continue
+    const loc = fragmentLocation(rig.id)
+    if (!loc) continue
+    const dist = player ? Math.hypot(player.x - loc.x, player.z - loc.z) : 999
+    // closer -> stronger + taller; clamped so it never goes fully dark
+    const strength = Math.min(3.1, Math.max(0.7, 3.0 - dist / 22))
+    const pulse = 1 + Math.sin(beaconPhase) * 0.15
+    const pillarMat = Material.getFlatMutable(rig.beacon.pillar)
+    if (pillarMat) pillarMat.emissiveIntensity = 1.3 * strength * pulse
+    const ringMat = Material.getFlatMutable(rig.beacon.ring)
+    if (ringMat) ringMat.emissiveIntensity = 0.7 * strength
+    const t = Transform.getMutable(rig.beacon.pillar)
+    if (t) t.scale = Vector3.create(1, 0.8 + strength * 0.5, 1)
+  }
+}
+
+export function resetBeaconPhase(): void {
+  beaconPhase = 0
 }
 
 // Gentle animation: fragment bobs and spins, guardian sways, motes orbit.
