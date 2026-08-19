@@ -7,7 +7,9 @@ import {
   applyExpedition,
   completeExpedition,
   collectFragment,
+  dispelCurrentObjective,
   dispelGuardian,
+  dispelInFlightNow,
   expeditionCollectedCount,
   expeditionCompleted,
   expeditionFragments,
@@ -322,4 +324,65 @@ test('reload preserves expedition state through the provider', async () => {
   const ok = await loadExpedition()
   assert.equal(ok, true)
   assert.equal(expeditionIsCollected(id), true, 'server still reports the collection')
+})
+
+test('a second dispel while one is in flight sends exactly one request', async () => {
+  const day = dayKeyFromDate(new Date())
+  const id = fragmentsForDay(day)[0]
+  const payload = routePayload(day)
+  let invoke = 0
+  expeditionState.provider = {
+    async load() {
+      return expeditionFromServer(payload)
+    },
+    async dispel() {
+      invoke++
+      await new Promise((r) => setTimeout(r, 5))
+      return expeditionFromServer(routePayload(day, { [id]: { hits: 1 } }))
+    },
+    async collect() {
+      throw new Error('unused')
+    },
+    async complete() {
+      throw new Error('unused')
+    }
+  }
+  await loadExpedition()
+  const p1 = dispelGuardian(id)
+  const p2 = dispelGuardian(id) // duplicate tap while the first is on the wire
+  const [r1, r2] = await Promise.all([p1, p2])
+  assert.equal(invoke, 1, 'exactly one server request for two taps')
+  assert.equal(r1, true)
+  assert.equal(r2, false, 'second tap rejected while in flight')
+  assert.equal(expeditionHits(id), 1)
+  assert.equal(dispelInFlightNow(), false, 'flag clears after the request settles')
+})
+
+test('dispelCurrentObjective targets the current uncollected fragment (canonical action)', async () => {
+  const day = dayKeyFromDate(new Date())
+  const route = fragmentsForDay(day)
+  const id = route[0]
+  const calls: string[] = []
+  expeditionState.provider = {
+    async load() {
+      return expeditionFromServer(routePayload(day))
+    },
+    async dispel(fragmentId) {
+      calls.push(fragmentId)
+      return expeditionFromServer(routePayload(day, { [id]: { hits: 1 } }))
+    },
+    async collect() {
+      throw new Error('unused')
+    },
+    async complete() {
+      throw new Error('unused')
+    }
+  }
+  await loadExpedition()
+  const started = dispelCurrentObjective()
+  assert.equal(started, true)
+  // let the fire-and-forget settle
+  await new Promise((r) => setTimeout(r, 10))
+  assert.deepEqual(calls, [id], 'the same canonical dispel is used for world + UI')
+  assert.equal(expeditionHits(id), 1)
 })

@@ -79,20 +79,47 @@ export async function loadExpedition(): Promise<boolean> {
 }
 
 // One dispel hit against a fragment's guardian. Only the server's response
-// is applied; a failed request never touches local state.
+// is applied; a failed request never touches local state. This is the ONE
+// canonical dispel action — the world tap, the UI button, and the card all
+// call it, and an in-flight guard guarantees exactly one request per tap.
+let dispelInFlight = false
+
+export function dispelInFlightNow(): boolean {
+  return dispelInFlight
+}
+
 export async function dispelGuardian(fragmentId: ExpeditionFragmentId): Promise<boolean> {
-  if (expeditionState.loading) return false
+  // reject a second tap while a dispel is already on the wire
+  if (dispelInFlight || expeditionState.loading) return false
+  if (!fragmentId) return false
+  dispelInFlight = true
+  bump()
+  console.log('[EXPEDITION] dispel attempt', fragmentId)
   try {
     applyExpedition(await expeditionState.provider.dispel(fragmentId))
     expeditionState.lastDispelAt = Date.now()
     expeditionState.lastDispelFragment = fragmentId
     expeditionState.dispelError = false
+    console.log('[EXPEDITION] guardian progress', fragmentId, `${expeditionHits(fragmentId)}/3`)
+    if (expeditionHits(fragmentId) >= 3) console.log('[EXPEDITION] guardian defeated, fragment revealed', fragmentId)
     return true
   } catch {
     expeditionState.dispelError = true
     bump()
+    console.log('[EXPEDITION] server response rejected', fragmentId)
     return false
+  } finally {
+    dispelInFlight = false
   }
+}
+
+// Convenience: dispel the current uncollected objective (the one the mission
+// card / beacon / trail all point at). Shared by the world tap and the UI.
+export function dispelCurrentObjective(): boolean {
+  const next = expeditionFragments().find((f) => !f.collected)
+  if (!next) return false
+  void dispelGuardian(next.id)
+  return true
 }
 
 // Collect a fragment (guardian already cleared server-side).

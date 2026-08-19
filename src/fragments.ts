@@ -21,7 +21,12 @@ import {
 } from '@dcl/sdk/ecs'
 import { Color3, Color4, Quaternion, Vector3 } from '@dcl/sdk/math'
 import { fragmentLocation, type ExpeditionFragmentId } from '../shared/expedition'
-import { collectFragment as collectFragmentAction, expeditionHits, expeditionIsCollected } from './expedition'
+import {
+  collectFragment as collectFragmentAction,
+  dispelGuardian as dispelGuardianAction,
+  expeditionHits,
+  expeditionIsCollected
+} from './expedition'
 
 const MOTES = 3
 const FRAGMENT_BOB = 0.35 // meters of bob
@@ -141,8 +146,13 @@ export function createExpeditionSite(id: ExpeditionFragmentId): FragmentRig {
       entity: guardian,
       opts: { button: InputAction.IA_POINTER, hoverText: 'DISPEL' }
     },
-    () => {
-      void collectFragmentAction(rigs.find((r) => r.id === id)?.id ?? id)
+    (e) => {
+      // the guardian is an INTERACTION PRIMITIVE: tapping it must run the
+      // same canonical dispel as the UI button, never a collect (the server
+      // would reject collecting a guarded fragment). A single tap = one hit.
+      const rig = rigs.find((r) => r.id === id)
+      if (!rig) return
+      void dispelGuardianAction(id)
     }
   )
 

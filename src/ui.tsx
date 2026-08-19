@@ -19,7 +19,9 @@ import { playerStoneMemoryIds } from './stone-state'
 import {
   collectFragment as collectExpeditionFragment,
   completeExpedition,
+  dispelCurrentObjective,
   dispelGuardian,
+  dispelInFlightNow,
   expeditionCollectedCount,
   expeditionCompleted,
   expeditionFragments,
@@ -30,7 +32,7 @@ import { fragmentLocation, zoneOf, type ExpeditionFragmentId } from '../shared/e
 import { enterRealm, returnToHub } from './realm-portal'
 import { realmById, objectiveById } from '../shared/realms'
 import { describeNextTarget, navApproach } from './navigation'
-import { describeMissionCard, guardianHitMessage } from './mission-clarity'
+import { describeMissionCard, guardianHitMessage, NEAR_RADIUS } from './mission-clarity'
 import { startRestoration } from './restoration'
 import {
   livingCommunityActivity,
@@ -113,6 +115,15 @@ let startedExpedition = false
 let guardianToastUntil = 0
 let guardianToastText = ''
 const lastShownHitsByFragment: Record<string, number> = {}
+// arrival feedback: a short, non-blocking "MEMORY BEACON FOUND" toast, fired
+// once per objective when the player first gets within NEAR_RADIUS (triggered
+// by proximity, not camera)
+let arrivalToastUntil = 0
+let arrivalToastText = ''
+const arrivalAnnounced: Record<string, boolean> = {}
+// dispel failure feedback
+let dispelErrorToastUntil = 0
+let dispelErrorShown = false
 // brief success banner after a live restoration + when the world level
 // actually ticks up (never faked — only when the real level changes)
 let restorationBannerUntil = 0
@@ -193,6 +204,8 @@ const uiComponent = () => {
   const nav = describeNextTarget(interactionState.player)
   // contextual, phase-aware mission card (WHAT -> WHERE -> HOW FAR -> DO)
   const card = describeMissionCard(interactionState.player, startedExpedition)
+  // the canonical DISPEL is in flight (exactly one request per tap)
+  const ctaGuardianInFlight = interactionState.target?.type === 'guardian' && dispelInFlightNow()
   // guardian per-hit feedback: when the server confirms a rise in hits, show
   // the matching "GUARDIAN WEAKENED / ALMOST FREE" toast (the freed + found
   // moment is covered by the existing collection toast)
@@ -203,6 +216,29 @@ const uiComponent = () => {
       guardianToastUntil = Date.now() + TOAST_MS
     }
     if (f.hits !== prev) lastShownHitsByFragment[f.id] = f.hits
+  }
+  // arrival: once per objective, when the player is close (proximity, not
+  // camera). Clear, short, non-blocking.
+  const nextFrag = expeditionFragments().find((f) => !f.collected)
+  if (
+    nextFrag &&
+    card.phase !== 'enter' &&
+    card.phase !== 'loading' &&
+    card.howFar !== null &&
+    card.howFar <= NEAR_RADIUS &&
+    !arrivalAnnounced[nextFrag.id]
+  ) {
+    arrivalAnnounced[nextFrag.id] = true
+    arrivalToastText =
+      card.phase === 'guardian' ? 'MEMORY BEACON FOUND · a guardian protects the memory' : 'MEMORY BEACON FOUND · the memory is nearby'
+    arrivalToastUntil = Date.now() + 3200
+  }
+  // dispel failure: surface once per failed attempt
+  if (expeditionState.dispelError && !dispelErrorShown) {
+    dispelErrorShown = true
+    dispelErrorToastUntil = Date.now() + ERROR_MS
+  } else if (!expeditionState.dispelError) {
+    dispelErrorShown = false
   }
   if (completedNow && !lastSeenCompleted) {
     lastSeenCompleted = true
@@ -398,6 +434,22 @@ const uiComponent = () => {
               </UiEntity>
             )
           })()}
+          {Date.now() < arrivalToastUntil && (
+            <UiEntity
+              uiTransform={{ padding: { top: 12, bottom: 12, left: 28, right: 28 } }}
+              uiBackground={{ color: Color4.fromHexString('#1c2a30f2') }}
+            >
+              <Label value={arrivalToastText} fontSize={18} color={Color4.fromHexString('#9fd8ff')} textAlign="middle-center" />
+            </UiEntity>
+          )}
+          {Date.now() < dispelErrorToastUntil && (
+            <UiEntity
+              uiTransform={{ padding: { top: 10, bottom: 10, left: 24, right: 24 } }}
+              uiBackground={{ color: Color4.fromHexString('#2a1010f2') }}
+            >
+              <Label value="THE MEMORY COULDN'T BE DISPELLED · TRY AGAIN" fontSize={14} color={RED} textAlign="middle-center" />
+            </UiEntity>
+          )}
           {!rareHintDismissed && livingRareLocation() !== null && !livingRareDiscovered() && (
             <UiEntity
               uiTransform={{ padding: { top: 8, bottom: 8, left: 20, right: 20 } }}
@@ -436,7 +488,7 @@ const uiComponent = () => {
           }}
         >
           <Button
-            value={submitting ? 'SAVING...' : interactionState.target.label}
+            value={ctaGuardianInFlight ? 'DISPELLING...' : submitting ? 'SAVING...' : interactionState.target.label}
             variant="primary"
             fontSize={22}
             uiTransform={{ width: 300, height: 76 }}
@@ -452,6 +504,7 @@ const uiComponent = () => {
               } else if (t.type === 'stone') {
                 selectStone(t.id)
               } else if (t.type === 'guardian') {
+                // single canonical dispel — same one the world tap uses
                 void dispelGuardian(t.id as ExpeditionFragmentId)
               } else if (t.type === 'fragment') {
                 void collectExpeditionFragment(t.id as ExpeditionFragmentId)
@@ -569,18 +622,17 @@ const uiComponent = () => {
                 onMouseDown={restoreAndReturn}
               />
             )}
-            {card.phase === 'guardian' && (
-              <Button
-                value="DISPEL"
-                variant="primary"
-                fontSize={20}
-                uiTransform={{ width: '100%', height: 64, margin: { top: 10 } }}
-                onMouseDown={() => {
-                  const next = expeditionFragments().find((f) => !f.collected)
-                  if (next) void dispelGuardian(next.id)
-                }}
-              />
-            )}
+            {card.phase === 'guardian' && (() => {
+              const g = expeditionFragments().find((f) => !f.collected)
+              const hits = g ? (expeditionState.state?.fragments.find((x) => x.id === g.id)?.hits ?? 0) : 0
+              const dots = '●'.repeat(Math.min(hits, 3)) + '○'.repeat(Math.max(0, 3 - hits))
+              return (
+                <UiEntity uiTransform={{ display: 'flex', flexDirection: 'row', alignItems: 'center', margin: { top: 8 } }}>
+                  <Label value={`DISPEL  ${hits} / 3`} fontSize={20} color={Color4.White()} textAlign="middle-left" />
+                  <Label value={`  ${dots}`} fontSize={20} color={GOLD} textAlign="middle-left" uiTransform={{ margin: { left: 8 } }} />
+                </UiEntity>
+              )
+            })()}
           </UiEntity>
         </UiEntity>
       )}
