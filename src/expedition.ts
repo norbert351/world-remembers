@@ -38,9 +38,23 @@ export const expeditionState = {
   lastCollectFragment: null as ExpeditionFragmentId | null,
   lastCompleteAt: 0,
   dispelError: false,
+  // why the last dispel failed: 'timeout' | 'network' | 'server' | null
+  lastDispelError: null as 'timeout' | 'network' | 'server' | null,
   // bump on every change so the UI re-renders fresh values
   version: 0,
   provider: new LocalExpeditionProvider() as ExpeditionProvider
+}
+
+// Interaction targets carry a display prefix (guardian-<fragId>, fragment-<fragId>,
+// rare-<fragId>) that is NOT the server's fragment id. Every client action must
+// strip the prefix so the server receives the exact fragment id, otherwise it
+// rejects the request (invalid_fragment) and DISPEL can never succeed.
+const INTERACTION_PREFIXES = ['guardian-', 'fragment-', 'rare-']
+export function normalizeFragmentId(id: string): string {
+  for (const p of INTERACTION_PREFIXES) {
+    if (id.startsWith(p)) return id.slice(p.length)
+  }
+  return id
 }
 
 // Identity comes from the same DCL session resolver as everywhere else.
@@ -88,27 +102,55 @@ export function dispelInFlightNow(): boolean {
   return dispelInFlight
 }
 
+// Guaranteed timeout so a hung backend can never leave the scene stuck at
+// "DISPELLING...". Type-safe for the scene runtime (no DOM AbortSignal): a
+// Promise.race keeps the in-flight lock from blocking forever, and the
+// finally-block below always releases it (in DISPENSING of outcome).
+const DISPEL_TIMEOUT_MS = 8000
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('dispel_timeout')), ms)
+    p.then(
+      (v) => {
+        clearTimeout(timer)
+        resolve(v)
+      },
+      (e) => {
+        clearTimeout(timer)
+        reject(e)
+      }
+    )
+  })
+}
+
 export async function dispelGuardian(fragmentId: ExpeditionFragmentId): Promise<boolean> {
   // reject a second tap while a dispel is already on the wire
   if (dispelInFlight || expeditionState.loading) return false
-  if (!fragmentId) return false
+  // normalize away any interaction-target prefix (guardian- / fragment- / rare-)
+  const realId = normalizeFragmentId(fragmentId)
+  if (!realId) return false
   dispelInFlight = true
   bump()
-  console.log('[EXPEDITION] dispel attempt', fragmentId)
+  console.log('[EXPEDITION] dispel attempt', realId)
   try {
-    applyExpedition(await expeditionState.provider.dispel(fragmentId))
+    applyExpedition(await withTimeout(expeditionState.provider.dispel(realId), DISPEL_TIMEOUT_MS))
     expeditionState.lastDispelAt = Date.now()
-    expeditionState.lastDispelFragment = fragmentId
+    expeditionState.lastDispelFragment = realId
     expeditionState.dispelError = false
-    console.log('[EXPEDITION] guardian progress', fragmentId, `${expeditionHits(fragmentId)}/3`)
-    if (expeditionHits(fragmentId) >= 3) console.log('[EXPEDITION] guardian defeated, fragment revealed', fragmentId)
+    expeditionState.lastDispelError = null
+    console.log('[EXPEDITION] guardian progress', realId, `${expeditionHits(realId)}/3`)
+    if (expeditionHits(realId) >= 3) console.log('[EXPEDITION] guardian defeated, fragment revealed', realId)
     return true
-  } catch {
+  } catch (e) {
     expeditionState.dispelError = true
+    const msg = (e as Error | undefined)?.message
+    const name = (e as Error | undefined)?.name
+    expeditionState.lastDispelError = msg === 'dispel_timeout' || name === 'AbortError' ? 'timeout' : 'network'
     bump()
-    console.log('[EXPEDITION] server response rejected', fragmentId)
+    console.log('[EXPEDITION] server response rejected', realId, name, msg)
     return false
   } finally {
+    // the interaction lock MUST always be released (also on timeout)
     dispelInFlight = false
   }
 }
@@ -125,10 +167,12 @@ export function dispelCurrentObjective(): boolean {
 // Collect a fragment (guardian already cleared server-side).
 export async function collectFragment(fragmentId: ExpeditionFragmentId): Promise<boolean> {
   if (expeditionState.loading) return false
+  const realId = normalizeFragmentId(fragmentId)
+  if (!realId) return false
   try {
-    applyExpedition(await expeditionState.provider.collect(fragmentId))
+    applyExpedition(await expeditionState.provider.collect(realId))
     expeditionState.lastCollectAt = Date.now()
-    expeditionState.lastCollectFragment = fragmentId
+    expeditionState.lastCollectFragment = realId
     return true
   } catch {
     expeditionState.dispelError = true

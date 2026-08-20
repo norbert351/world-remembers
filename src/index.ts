@@ -188,24 +188,39 @@ export function main() {
 // tree gets mission priority while the mission is active and uncompleted.
 let interactionTargets = buildTargets({ missionActive: true, missionCompleted: false })
 
-// Spawn today's expedition sites (guardians + hidden fragments) and add
-// them to the interaction manager. Called once the expedition loads.
+// Spawn today's expedition sites (guardians + hidden fragments). The
+// interaction TARGETS themselves are rebuilt every proximity tick by
+// rebuildExpeditionTargets so a defeated guardian swaps to a COLLECT target
+// and a collected one disappears — no stale DISPEL / no ghost CTA.
 function setupExpeditionSites(): void {
   clearExpeditionTargets()
   for (const f of expeditionFragments()) {
     const rig = createExpeditionSite(f.id)
-    const collected = expeditionIsCollected(f.id)
-    if (collected) {
+    if (expeditionIsCollected(f.id)) {
       // already collected today: dissolve immediately (server says so)
       if (rig.guardian) engine.removeEntity(rig.guardian)
       rig.guardian = null
       if (rig.fragment) engine.removeEntity(rig.fragment)
       rig.fragment = null
       rig.collected = true
-    } else {
-      // the guardian is the current objective; the fragment becomes the
-      // target once the guardian is cleared
-      const loc = fragmentLocation(f.id) ?? { x: 0, z: 0 }
+    }
+  }
+  syncExpeditionSites()
+  refreshInteraction()
+}
+
+// Rebuild the expedition interaction targets from the CURRENT authoritative
+// state. Uncollected + guarded -> DISPEL; uncollected + cleared -> COLLECT;
+// collected -> nothing. Called every 0.5s proximity tick, so the CTA always
+// matches the real objective (one canonical target per objective).
+function rebuildExpeditionTargets(): void {
+  clearExpeditionTargets()
+  const realm = currentExpRealm()
+  if (!realm) return
+  for (const f of expeditionFragments()) {
+    if (f.collected) continue
+    const loc = fragmentLocation(f.id) ?? { x: 0, z: 0 }
+    if (f.hits < 3) {
       addExpeditionTarget({
         id: `guardian-${f.id}`,
         type: 'guardian',
@@ -216,25 +231,32 @@ function setupExpeditionSites(): void {
         priority: 1,
         enabled: true
       })
+    } else {
+      addExpeditionTarget({
+        id: `fragment-${f.id}`,
+        type: 'fragment',
+        position: { x: loc.x, z: loc.z },
+        radius: EXPEDITION_INTERACTION_RADIUS,
+        label: 'COLLECT MEMORY',
+        hint: 'A memory waits',
+        priority: 1,
+        enabled: true
+      })
     }
   }
-  // the Hub->Realm gate: a physical doorway at the hub's east edge. Walking
-  // up to it (or tapping ENTER on the card) teleports into today's realm.
-  const realm = currentExpRealm()
-  if (realm && !expeditionCompleted()) {
+  // the Hub->Realm gate: walks up to it (or taps ENTER on the card) to enter
+  if (!expeditionCompleted()) {
     addExpeditionTarget({
       id: 'portal-hub',
       type: 'portal',
       position: HUB_GATE,
       radius: 6,
       label: `ENTER ${realm.name.toUpperCase()}`,
-      hint: 'Step into today\'s Memory Realm',
+      hint: "Step into today's Memory Realm",
       priority: 2,
       enabled: true
     })
   }
-  syncExpeditionSites()
-  refreshInteraction()
 }
 
 // Today's realm (from the server's expedition state), or undefined.
@@ -254,6 +276,9 @@ function expeditionHitsLabel(id: string): string {
 }
 
 function refreshInteraction(): void {
+  // rebuild expedition targets first so the CTA matches the authoritative
+  // state each tick (fixes stale DISPEL after defeat + enables UI COLLECT)
+  rebuildExpeditionTargets()
   interactionTargets = buildTargets({
     missionActive: missionActive(),
     missionCompleted: missionCompleted()

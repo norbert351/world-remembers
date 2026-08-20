@@ -124,6 +124,7 @@ const arrivalAnnounced: Record<string, boolean> = {}
 // dispel failure feedback
 let dispelErrorToastUntil = 0
 let dispelErrorShown = false
+let dispelErrorToastText = 'THE MEMORY COULDN\u2019T BE DISPELLED \u00B7 TRY AGAIN'
 // brief success banner after a live restoration + when the world level
 // actually ticks up (never faked — only when the real level changes)
 let restorationBannerUntil = 0
@@ -233,10 +234,14 @@ const uiComponent = () => {
       card.phase === 'guardian' ? 'MEMORY BEACON FOUND · a guardian protects the memory' : 'MEMORY BEACON FOUND · the memory is nearby'
     arrivalToastUntil = Date.now() + 3200
   }
-  // dispel failure: surface once per failed attempt
+  // dispel failure: surface once per failed attempt (timeout vs network)
   if (expeditionState.dispelError && !dispelErrorShown) {
     dispelErrorShown = true
     dispelErrorToastUntil = Date.now() + ERROR_MS
+    dispelErrorToastText =
+      expeditionState.lastDispelError === 'timeout'
+        ? 'DISPEL FAILED \u00B7 COULD NOT BE REACHED \u00B7 TRY AGAIN'
+        : 'DISPEL FAILED \u00B7 CHECK YOUR CONNECTION \u00B7 TRY AGAIN'
   } else if (!expeditionState.dispelError) {
     dispelErrorShown = false
   }
@@ -447,7 +452,7 @@ const uiComponent = () => {
               uiTransform={{ padding: { top: 10, bottom: 10, left: 24, right: 24 } }}
               uiBackground={{ color: Color4.fromHexString('#2a1010f2') }}
             >
-              <Label value="THE MEMORY COULDN'T BE DISPELLED · TRY AGAIN" fontSize={14} color={RED} textAlign="middle-center" />
+              <Label value={dispelErrorToastText} fontSize={14} color={RED} textAlign="middle-center" />
             </UiEntity>
           )}
           {!rareHintDismissed && livingRareLocation() !== null && !livingRareDiscovered() && (
@@ -789,7 +794,7 @@ const uiComponent = () => {
             uiBackground={{ color: PANEL }}
           >
             <UiEntity uiTransform={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-              <Label value="TODAY'S MEMORY" fontSize={13} color={GOLD} textAlign="middle-left" />
+              <Label value="COMMUNITY TREE" fontSize={13} color={GOLD} textAlign="middle-left" />
               <UiEntity uiTransform={{ flexGrow: 1 }} />
               <Button
                 value="−"
@@ -858,7 +863,7 @@ const uiComponent = () => {
           }}
         >
           <Button
-            value={`TODAY'S MEMORY  ${missionProgress()} / ${missionTarget()}`}
+            value={`COMMUNITY TREE  ${missionProgress()} / ${missionTarget()}`}
             variant="secondary"
             fontSize={15}
             uiTransform={{ width: 260, height: 44 }}

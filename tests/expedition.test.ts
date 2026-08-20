@@ -18,6 +18,7 @@ import {
   expeditionState,
   expeditionTodayCompletions,
   loadExpedition,
+  normalizeFragmentId,
   resetExpedition,
   setExpeditionIdentityResolver
 } from '../src/expedition'
@@ -385,4 +386,91 @@ test('dispelCurrentObjective targets the current uncollected fragment (canonical
   await new Promise((r) => setTimeout(r, 10))
   assert.deepEqual(calls, [id], 'the same canonical dispel is used for world + UI')
   assert.equal(expeditionHits(id), 1)
+})
+
+test('normalizeFragmentId strips interaction-target prefixes', () => {
+  const id = 'starfall_island-1'
+  assert.equal(normalizeFragmentId(`guardian-${id}`), id)
+  assert.equal(normalizeFragmentId(`fragment-${id}`), id)
+  assert.equal(normalizeFragmentId(`rare-${id}`), id)
+  assert.equal(normalizeFragmentId(id), id)
+})
+
+test('dispel with a UI/CTA prefixed id still targets the real fragment (root-cause regression)', async () => {
+  const day = dayKeyFromDate(new Date())
+  const id = fragmentsForDay(day)[0]
+  const received: string[] = []
+  expeditionState.provider = {
+    async load() {
+      return expeditionFromServer(routePayload(day))
+    },
+    async dispel(fragmentId) {
+      received.push(fragmentId)
+      return expeditionFromServer(routePayload(day, { [id]: { hits: 1 } }))
+    },
+    async collect() {
+      throw new Error('unused')
+    },
+    async complete() {
+      throw new Error('unused')
+    }
+  }
+  await loadExpedition()
+  // the CTA hands the interaction target id ("guardian-<fragId>") to the
+  // canonical action; it must be normalized BEFORE hitting the server
+  const ok = await dispelGuardian(`guardian-${id}` as never)
+  assert.equal(ok, true)
+  assert.deepEqual(received, [id], 'server receives the exact fragment id, not the prefix')
+  assert.equal(expeditionHits(id), 1)
+})
+
+test('a timed-out dispel is classified as timeout and releases the lock', async () => {
+  const day = dayKeyFromDate(new Date())
+  const id = fragmentsForDay(day)[0]
+  expeditionState.provider = {
+    async load() {
+      return expeditionFromServer(routePayload(day))
+    },
+    async dispel() {
+      const err = new Error('The operation was aborted') as Error & { name: string }
+      err.name = 'AbortError'
+      throw err
+    },
+    async collect() {
+      throw new Error('unused')
+    },
+    async complete() {
+      throw new Error('unused')
+    }
+  }
+  await loadExpedition()
+  const ok = await dispelGuardian(id)
+  assert.equal(ok, false)
+  assert.equal(expeditionState.lastDispelError, 'timeout')
+  assert.equal(expeditionHits(id), 0, 'no progress on failure')
+  assert.equal(dispelInFlightNow(), false, 'lock released after timeout')
+})
+
+test('a network failure is classified as network and releases the lock', async () => {
+  const day = dayKeyFromDate(new Date())
+  const id = fragmentsForDay(day)[0]
+  expeditionState.provider = {
+    async load() {
+      return expeditionFromServer(routePayload(day))
+    },
+    async dispel() {
+      throw new TypeError('fetch failed')
+    },
+    async collect() {
+      throw new Error('unused')
+    },
+    async complete() {
+      throw new Error('unused')
+    }
+  }
+  await loadExpedition()
+  const ok = await dispelGuardian(id)
+  assert.equal(ok, false)
+  assert.equal(expeditionState.lastDispelError, 'network')
+  assert.equal(dispelInFlightNow(), false)
 })

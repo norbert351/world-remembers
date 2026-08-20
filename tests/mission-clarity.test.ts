@@ -93,8 +93,13 @@ test('card is guardian phase when next objective is near and guarded', () => {
   const player = { x: first.x + 2, z: first.z }
   const card = describeMissionCard(player, true)
   assert.equal(card.phase, 'guardian')
-  assert.equal(card.title, 'CORRUPTED MEMORY FOUND')
+  assert.equal(card.title, 'MEMORY GUARDIAN')
   assert.equal(card.action, 'TAP THE GUARDIAN TO DISPEL')
+  // navigation is suppressed while dealing with the guardian (no stale
+  // distance / FOLLOW-THE-TRAIL copy)
+  assert.equal(card.howFar, null)
+  assert.equal(card.nextWhere, '')
+  assert.equal(card.distanceLabel, '')
 })
 
 test('card is near phase at an objective whose guardian is cleared, before collect', () => {
@@ -105,7 +110,25 @@ test('card is near phase at an objective whose guardian is cleared, before colle
   const player = { x: first.x + 1, z: first.z }
   const card = describeMissionCard(player, true)
   assert.equal(card.phase, 'near')
-  assert.equal(card.action, 'LOOK FOR THE MEMORY BEACON')
+  assert.equal(card.title, 'MEMORY GUARDIAN DEFEATED')
+  assert.equal(card.action, 'COLLECT MEMORY')
+  // navigation suppressed here too
+  assert.equal(card.howFar, null)
+  assert.equal(card.nextWhere, '')
+})
+
+test('guardian phase shows 1/3 and 2/3 hit progress as the guardian is weakened', () => {
+  const day = dayKeyFromDate(new Date())
+  applyExpedition(payload(day, () => ({ hits: 1, collected: false })))
+  const first = fragmentLocation(fragmentsForDay(day)[0])!
+  const card = describeMissionCard({ x: first.x + 1, z: first.z }, true)
+  assert.equal(card.phase, 'guardian')
+  assert.equal(card.action, 'GUARDIAN WEAKENED · 2 MORE')
+
+  applyExpedition(payload(day, () => ({ hits: 2, collected: false })))
+  const card2 = describeMissionCard({ x: first.x + 1, z: first.z }, true)
+  assert.equal(card2.phase, 'guardian')
+  assert.equal(card2.action, 'ALMOST FREE · 1 MORE')
 })
 
 test('card counts progress after a collection (1 / 3)', () => {

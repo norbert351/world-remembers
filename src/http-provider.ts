@@ -114,6 +114,8 @@ export class HttpExpeditionProvider implements ExpeditionProvider {
     return expeditionFromServer(await res.json())
   }
 
+  // POST the action, then re-fetch the authoritative state in the SAME call
+  // (one response is discarded, never two).
   private async action(path: string, fragmentId?: ExpeditionFragmentId): Promise<ExpeditionState> {
     const id = this.auth()
     const body: Record<string, string> = { playerId: id }
@@ -124,24 +126,19 @@ export class HttpExpeditionProvider implements ExpeditionProvider {
       body: JSON.stringify(body)
     })
     if (!res.ok) throw new Error(`expedition_http_${res.status}`)
-    // the server returns a partial ack for dispel/collect (no full state);
-    // re-fetch the authoritative state
     return this.load()
   }
 
   async dispel(fragmentId: ExpeditionFragmentId): Promise<ExpeditionState> {
-    await this.action('/expedition/dispel', fragmentId)
-    return this.load()
+    return this.action('/expedition/dispel', fragmentId)
   }
 
   async collect(fragmentId: ExpeditionFragmentId): Promise<ExpeditionState> {
-    await this.action('/expedition/collect', fragmentId)
-    return this.load()
+    return this.action('/expedition/collect', fragmentId)
   }
 
   async complete(): Promise<ExpeditionState> {
-    await this.action('/expedition/complete')
-    return this.load()
+    return this.action('/expedition/complete')
   }
 }
 

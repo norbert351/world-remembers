@@ -131,33 +131,37 @@ export function describeMissionCard(
     }
   }
 
-  // near the objective: guardian or collect phase
+  // near the objective: guardian or collect phase. Navigation is suppressed
+  // here (no distance/FOLLOW line) so the card can't flip back to travel copy
+  // while the player is actively dealing with the guardian.
   if (near) {
     if (guarded) {
+      const hits = expeditionHits(next.id)
       return {
         phase: 'guardian',
-        title: 'CORRUPTED MEMORY FOUND',
-        objective: 'A guardian is protecting the memory.',
+        title: 'MEMORY GUARDIAN',
+        objective: hits >= 1 ? 'DISPEL THE GUARDIAN' : 'DISPEL IT 3 TIMES',
         progress,
-        nextWhere: realmName(),
-        howFar,
-        distanceLabel: `${howFar}m`,
-        action: guardianHitMessage(expeditionHits(next.id)),
-        direction: navApproach(),
+        nextWhere: '',
+        howFar: null,
+        distanceLabel: '',
+        action: guardianHitMessage(hits),
+        direction: 'steady',
         hint: 'Tap DISPEL to weaken the guardian.'
       }
     }
+    // guardian cleared: the fragment is revealed, collect it
     return {
       phase: 'near',
-      title: 'MEMORY NEARBY',
-      objective: 'A memory waits here.',
+      title: 'MEMORY GUARDIAN DEFEATED',
+      objective: 'MEMORY FRAGMENT FOUND',
       progress,
-      nextWhere: realmName(),
-      howFar,
-      distanceLabel: `${howFar}m`,
-      action: 'LOOK FOR THE MEMORY BEACON',
-      direction: navApproach(),
-      hint: 'Find the glowing memory beacon.'
+      nextWhere: '',
+      howFar: null,
+      distanceLabel: '',
+      action: 'COLLECT MEMORY',
+      direction: 'steady',
+      hint: 'Tap COLLECT to take the memory.'
     }
   }
 
