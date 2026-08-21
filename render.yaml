@@ -1,0 +1,21 @@
+# Render blueprint for The World Remembers API
+# One service: the Express 5 + pg persistence API. The DCL scene calls this
+# from the deployed World (worldremembers.dcl.eth).
+#
+# Setup: New+ > Blueprint > connect this repo, or `render blueprint launch`.
+# Then set DATABASE_URL (Neon) + CORS_ORIGIN in the service Environment.
+services:
+  - type: web
+    name: world-remembers-api
+    runtime: node
+    rootDir: backend
+    plan: starter   # free-tier 512MB is usually enough; starter protects the build
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/backend/src/index.js
+    healthCheckPath: /health
+    envVars:
+      # Runtime-only. Render injects PORT itself; the app reads process.env.PORT.
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: DATABASE_URL
+        sync: false   # set in dashboard; never commit the Neon password

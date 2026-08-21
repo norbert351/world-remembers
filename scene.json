@@ -13,6 +13,9 @@
     "email": ""
   },
   "main": "bin/index.js",
+  "worldConfiguration": {
+    "name": "worldremembers.dcl.eth"
+  },
   "tags": [
     "social",
     "garden",
