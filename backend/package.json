@@ -5,7 +5,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file=.env dist/backend/src/index.js",
     "dev": "tsx watch src/index.ts",
     "db:migrate": "node --env-file=.env --import tsx scripts/migrate.ts",
