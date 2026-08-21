@@ -71,12 +71,9 @@ export const COLORS = {
 }
 
 // World API endpoint. One place, used by the HTTP provider only.
-// Currently a Cloudflare tunnel URL: the VM's LAN IP is unreachable from
-// the phone, and the scene runtime has no location global to derive a host.
-// For the deployed world this must be an HTTPS URL reachable from the
-// Decentraland client (see README).
+// Production: the stable Render backend for the deployed world.
 export const API = {
-  baseUrl: 'https://climb-ave-veterinary-core.trycloudflare.com'
+  baseUrl: 'https://world-remembers.onrender.com'
 }
 
 // Memory Stones: id must match shared/stones.ts STONES. Position is the
