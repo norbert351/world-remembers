@@ -4,14 +4,18 @@
 #
 # Setup: New+ > Blueprint > connect this repo, or `render blueprint launch`.
 # Then set DATABASE_URL (Neon) + CORS_ORIGIN in the service Environment.
+#
+# The repo root is a DCL scene (yarn + @dcl/sdk). The API lives in backend/.
+# Rather than rely on Render's rootDir (which wasn't honored and built the
+# scene), the commands cd into backend/ explicitly so npm ci + tsc build ONLY
+# the API. Start still emits dist/backend/src/index.js (tsconfig rootDir "..").
 services:
   - type: web
     name: world-remembers-api
     runtime: node
-    rootDir: backend
     plan: starter   # free-tier 512MB is usually enough; starter protects the build
-    buildCommand: npm ci && npm run build
-    startCommand: node dist/backend/src/index.js
+    buildCommand: cd backend && npm ci && npm run build
+    startCommand: cd backend && node dist/backend/src/index.js
     healthCheckPath: /health
     envVars:
       # Runtime-only. Render injects PORT itself; the app reads process.env.PORT.
