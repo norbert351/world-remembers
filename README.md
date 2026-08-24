@@ -44,9 +44,13 @@ Single source of truth + tooling in this repo:
 - `scripts/security-scan.sh` — asserts no credentials ship in the client.
 - `npm test:mobile-link`, `npm run qr:dev`, `npm run qr:world`, `npm run security:scan`.
 
-Status: **World not yet deployed** → `qr:world` reports `PRODUCTION_BLOCKED`
-until a `worldConfiguration.name` exists and the World is pushed. See
-`docs/MOBILE-QR-TEST.md` for the exact deploy + QR steps and the phone test.
+Status: **World is live.** `worldremembers.dcl.eth` is deployed and publicly
+accessible via `https://play.decentraland.org/?realm=worldremembers.dcl.eth`,
+with `show_in_places: true`. The production QR points at that realm and opens
+in the Decentraland mobile app. The scene's persistence API runs on the stable
+hosted backend at `https://world-remembers.onrender.com` (see
+`src/config.ts` `API.baseUrl`). See `docs/MOBILE-QR-TEST.md` for the phone test
+steps.
 
 ## Phase I — exploration game-feel (smallest-set polish)
 
