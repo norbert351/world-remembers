@@ -85,6 +85,28 @@ checklists live in `docs/QA-PLAN.md` (Tests A–D + mobile UX) and
 `docs/MOBILE-QR-TEST.md`. World deployment is still the one blocking step
 before a production app QR / phone test: see `docs/QA-PLAN.md` precondition.
 
+## Phase K — remembered together (live co-presence social amplifier)
+
+A slippery-social win for the Friendzone theme: the restoration payoff **gets
+better when a friend is actually there.** The scene tracks other avatars via
+SDK7's `@dcl/sdk/players` enter/leave helper and, on a slow 0.5s tick, counts
+how many OTHER players are within ~20m of the Memory Tree (pure engine-free
+core in `src/presence-core.ts`, glued in `src/social-presence.ts`). When a
+player brings a memory back while others are near:
+
+- the payoff **wave runs bigger and brighter** with a warm **echo ring** that
+  trails it (`src/restoration.ts`, additive, zero new permanent entities);
+- the banner escalates to **"MEMORY RESTORED ✨ · brought back together with N
+  explorers 💛"** instead of the solo line;
+- a live **"N other explorers are at the tree"** chip invites stragglers to
+  come over.
+
+Fully solo-safe: no gates, no dependency, nothing blocks a single player — it
+only ever makes a shared moment warmer. Verified: build clean, all 18 scene
+suites pass, scene smoke unchanged at 144 entities, security scan PASS. The
+co-presence count itself is a live scene readout, so its true feel still needs
+a real two-device run (`docs/QA-PLAN.md` Test C).
+
 ## Milestone 6: The Living Memory World (Phase F+G)
 
 - **World Memory Level** — 5 derived levels from community activity

@@ -34,6 +34,7 @@ import { realmById, objectiveById } from '../shared/realms'
 import { describeNextTarget, navApproach } from './navigation'
 import { describeMissionCard, guardianHitMessage, NEAR_RADIUS } from './mission-clarity'
 import { startRestoration } from './restoration'
+import { nearbyOthersAtTree, TOGETHER_RADIUS } from './social-presence'
 import {
   livingCommunityActivity,
   livingMemoryLevel,
@@ -205,6 +206,9 @@ const uiComponent = () => {
   const nav = describeNextTarget(interactionState.player)
   // contextual, phase-aware mission card (WHAT -> WHERE -> HOW FAR -> DO)
   const card = describeMissionCard(interactionState.player, startedExpedition)
+  // live co-presence: how many OTHER explorers are near the Memory Tree now.
+  // Used for the "friends are here" invite chip and the together payoff.
+  const othersHere = nearbyOthersAtTree()
   // the canonical DISPEL is in flight (exactly one request per tap)
   const ctaGuardianInFlight = interactionState.target?.type === 'guardian' && dispelInFlightNow()
   // guardian per-hit feedback: when the server confirms a rise in hits, show
@@ -361,6 +365,15 @@ const uiComponent = () => {
             textAlign="middle-center"
             uiTransform={{ margin: { top: 2 } }}
           />
+          {othersHere > 0 && (
+            <Label
+              value={`💛 ${othersHere} ${othersHere === 1 ? 'other explorer is' : 'other explorers are'} at the tree · come back together`}
+              fontSize={12}
+              color={Color4.fromHexString('#ffb45e')}
+              textAlign="middle-center"
+              uiTransform={{ margin: { top: 2 } }}
+            />
+          )}
           {worldState.loadError && (
             <UiEntity
               uiTransform={{ padding: { top: 6, bottom: 6, left: 18, right: 18 }, margin: { top: 10 } }}
@@ -405,9 +418,18 @@ const uiComponent = () => {
           {Date.now() < restorationBannerUntil && (
             <UiEntity
               uiTransform={{ padding: { top: 12, bottom: 12, left: 30, right: 30 } }}
-              uiBackground={{ color: Color4.fromHexString('#1c2a18f2') }}
+              uiBackground={{ color: othersHere > 0 ? Color4.fromHexString('#3a2418f2') : Color4.fromHexString('#1c2a18f2') }}
             >
-              <Label value="MEMORY RESTORED ✨" fontSize={22} color={GOLD} textAlign="middle-center" />
+              <Label
+                value={
+                  othersHere > 0
+                    ? `MEMORY RESTORED ✨ · brought back together with ${othersHere === 1 ? 'another explorer' : `${othersHere} explorers`} 💛`
+                    : 'MEMORY RESTORED ✨'
+                }
+                fontSize={22}
+                color={Color4.fromHexString(othersHere > 0 ? '#ffd9a0' : '#ffe08a')}
+                textAlign="middle-center"
+              />
             </UiEntity>
           )}
           {Date.now() < levelToastUntil && (

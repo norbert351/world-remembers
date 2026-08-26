@@ -28,6 +28,8 @@ import { setupWorldComposition } from './composition'
 import { currentOnboardingLine, onboardingState, startOnboardingIfFirstVisit, tickOnboarding } from './onboarding'
 import { registerRitualHooks, ritualState, tickRitual } from './ritual'
 import { cleanupRitualVisuals, ritualPhaseVisual, ritualVisualSystem } from './ritual-visuals'
+import { initSocialPresence, nearbyOthersAtTree } from './social-presence'
+import { setRestorationPresence } from './restoration'
 import {
   applyMission,
   loadMission,
@@ -110,6 +112,11 @@ export function main() {
   setExpeditionIdentityResolver()
   setLivingIdentityResolver()
   setFragmentIdentityResolver(getPlayerIdentity)
+
+  // live co-presence at the Memory Tree feeds the "remembered together"
+  // amplifier; wire the restoration payoff to it (solo play is unchanged)
+  initSocialPresence()
+  setRestorationPresence(nearbyOthersAtTree)
 
   // wire session-local participation evidence into the mission panel
   setContributedFlag(playerContributedFlag)
