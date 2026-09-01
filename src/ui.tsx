@@ -96,6 +96,9 @@ function leaveMemory(reaction: ReactionId) {
 // two-stage flow: [LEAVE YOUR MEMORY] reveals the four reactions, the player
 // picks one, the server confirms. Module-level because uiComponent re-renders.
 let pickerOpen = false
+let stoneShareOpen = false
+// Canonical World URL for the invite-friends hook (matches scripts/mobile-link.mjs).
+const WORLD_SHARE_URL = 'https://play.decentraland.org/?realm=worldremembers.dcl.eth&position=0,0'
 // the community (100-player) mission is secondary; collapsed to a compact
 // chip by default so the Expedition reads as the one clear objective
 let missionPanelCollapsed = true
@@ -1019,6 +1022,32 @@ const uiComponent = () => {
                   color={GOLD}
                   textAlign="middle-center"
                 />
+                <Button
+                  value={stoneShareOpen ? 'HIDE ✕' : '📣 INVITE A FRIEND'}
+                  variant="secondary"
+                  fontSize={15}
+                  uiTransform={{ width: '100%', height: 52, margin: { top: 8 } }}
+                  onMouseDown={() => (stoneShareOpen = !stoneShareOpen)}
+                />
+                {stoneShareOpen && (
+                  <UiEntity
+                    uiTransform={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      padding: { top: 8, bottom: 8, left: 10, right: 10 },
+                      margin: { top: 8 }
+                    }}
+                    uiBackground={{ color: Color4.fromHexString('#2a2418f2') }}
+                  >
+                    <Label
+                      value="The world remembers who was here. Send a friend this link:"
+                      fontSize={13}
+                      color={CREAM}
+                      textAlign="middle-left"
+                    />
+                    <Label value={WORLD_SHARE_URL} fontSize={13} color={GOLD} textAlign="middle-left" />
+                  </UiEntity>
+                )}
               </UiEntity>
             ) : pickerOpen ? (
               <UiEntity uiTransform={{ display: 'flex', flexDirection: 'column' }}>
