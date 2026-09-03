@@ -3,6 +3,23 @@
 A persistent social garden for the Decentraland Friendzone Mobile Buildathon.
 Every tap helps the Memory Tree grow, and the world remembers who was here.
 
+## Live demo & verification
+
+- **Play the World**: `https://play.decentraland.org/?realm=worldremembers.dcl.eth`
+  (open in the Decentraland app or the web client; QR: `images/WorldRemembers_QR.png`)
+- **Persistence API**: `https://world-remembers.onrender.com` — `/health` reports
+  `db:up`; `/world` serves real derived state (memories, memory level, daily event).
+- **Verified live (2026-09-03)**: World `/settings` → `access_type: unrestricted`,
+  `single_player: false`, `show_in_places: true`. GitHub repo public, MIT license.
+- See `ARCHITECTURE.md`, `docs/TECHNICAL.md` (how it works), `docs/ROADMAP.md`
+  (what's next), and the Build/Run + Tests sections below.
+
+## Tech stack
+
+Decentraland **SDK7** scene (TypeScript, react-ecs mobile-first UI) · **Express 5**
++ **PostgreSQL/Neon** persistence API (Render-hosted) · **node:test** headless test
+suite · no GPU needed to verify.
+
 ## Milestone 7: Memory Realms (Phase H)
 
 The World is now a **Hub + daily Memory Realm** experience. The Hub stays the
@@ -82,8 +99,16 @@ line on collection; the Memory Journal gained a RARE MEMORY row; the completed
 card celebrates with truthful social copy ("You and N others restored it
 together") when real server data shows other explorers. Real-device gate
 checklists live in `docs/QA-PLAN.md` (Tests A–D + mobile UX) and
-`docs/MOBILE-QR-TEST.md`. World deployment is still the one blocking step
-before a production app QR / phone test: see `docs/QA-PLAN.md` precondition.
+`docs/MOBILE-QR-TEST.md`.
+
+> **Status (Sept 3, 2026): the World IS live.** `worldremembers.dcl.eth` is
+> deployed and publicly reachable via
+> `https://play.decentraland.org/?realm=worldremembers.dcl.eth` with
+> `show_in_places: true`, `single_player: false`, `access_type: unrestricted`.
+> The persistence API runs on the stable hosted backend
+> `https://world-remembers.onrender.com` (see `src/config.ts` `API.baseUrl`).
+> The production QR opens in the Decentraland mobile app. See
+> docs below for phone-test steps.
 
 ## Phase K — remembered together (live co-presence social amplifier)
 
@@ -332,19 +357,20 @@ cd backend && npm test       # API integration against real postgres (11)
 cd backend && npm run test:e2e  # full loop: provider -> API -> PG -> reload -> stages (7)
 ```
 
-## Known limits
-
-- In-world visual verification needs the Decentraland client (desktop or
-  mobile app). This VM has no GPU, so the Bevy web client (WebGPU) and the
-  desktop explorer can't render headless here. Verification performed:
-  build, typecheck, node smoke test against the real SDK engine, asset
-  bounds, and the persistence E2E through the real API + Postgres.
-- `API.baseUrl` points at a Cloudflare quick tunnel while phone testing
-  (the VM's LAN IP is unreachable from a phone, and the scene runtime has
-  no `location` global to derive a host). Quick tunnel URLs rotate on
-  restart: after restarting the API tunnel, update `API.baseUrl` in
-  `src/config.ts` and rebuild. The deployed world needs the production
-  HTTPS URL there.
+- **Known limits**
+  - In-world visual verification needs the Decentraland client (desktop or
+    mobile app). This VM has no GPU, so the Bevy web client (WebGPU) and the
+    desktop explorer can't render headless here. Verification performed:
+    build, typecheck, node smoke test against the real SDK engine, asset
+    bounds, the persistence E2E through the real API + Postgres, and a live
+    check of the deployed World (`/settings`) and the Render backend
+    (`/health`, `/world`).
+  - The **deployed** World points at the persistent Render backend
+    (`https://world-remembers.onrender.com` in `src/config.ts`) — never a
+    tunnel. Development/preview QRs use ephemeral Cloudflare quick tunnels for
+    phone previews on a cloud VM (the scene runtime has no `location` global);
+    those tunnel URLs rotate on restart and are only for the dev preview loop,
+    not the live World.
 
 ---
 
