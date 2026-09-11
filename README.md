@@ -7,7 +7,7 @@ Every tap helps the Memory Tree grow, and the world remembers who was here.
 
 - **Play the World**: `https://play.decentraland.org/?realm=worldremembers.dcl.eth`
   (open in the Decentraland app or the web client; QR: `images/WorldRemembers_QR.png`)
-- **Persistence API**: `https://world-remembers-fz89.onrender.com` — `/health` reports
+- **Persistence API**: `https://world-remembers.onrender.com` — `/health` reports
   `db:up`; `/world` serves real derived state (memories, memory level, daily event).
 - **Verified live (2026-09-03)**: World `/settings` → `access_type: unrestricted`,
   `single_player: false`, `show_in_places: true`. GitHub repo public, MIT license.
@@ -65,7 +65,7 @@ Status: **World is live.** `worldremembers.dcl.eth` is deployed and publicly
 accessible via `https://play.decentraland.org/?realm=worldremembers.dcl.eth`,
 with `show_in_places: true`. The production QR points at that realm and opens
 in the Decentraland mobile app. The scene's persistence API runs on the stable
-hosted backend at `https://world-remembers-fz89.onrender.com` (see
+hosted backend at `https://world-remembers.onrender.com` (see
 `src/config.ts` `API.baseUrl`). See `docs/MOBILE-QR-TEST.md` for the phone test
 steps.
 
@@ -106,7 +106,7 @@ checklists live in `docs/QA-PLAN.md` (Tests A–D + mobile UX) and
 > `https://play.decentraland.org/?realm=worldremembers.dcl.eth` with
 > `show_in_places: true`, `single_player: false`, `access_type: unrestricted`.
 > The persistence API runs on the stable hosted backend
-> `https://world-remembers-fz89.onrender.com` (see `src/config.ts` `API.baseUrl`).
+> `https://world-remembers.onrender.com` (see `src/config.ts` `API.baseUrl`).
 > The production QR opens in the Decentraland mobile app. See
 > docs below for phone-test steps.
 
@@ -366,7 +366,7 @@ cd backend && npm run test:e2e  # full loop: provider -> API -> PG -> reload -> 
     check of the deployed World (`/settings`) and the Render backend
     (`/health`, `/world`).
   - The **deployed** World points at the persistent Render backend
-    (`https://world-remembers-fz89.onrender.com` in `src/config.ts`) — never a
+    (`https://world-remembers.onrender.com` in `src/config.ts`) — never a
     tunnel. Development/preview QRs use ephemeral Cloudflare quick tunnels for
     phone previews on a cloud VM (the scene runtime has no `location` global);
     those tunnel URLs rotate on restart and are only for the dev preview loop,

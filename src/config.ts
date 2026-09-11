@@ -78,7 +78,7 @@ export const COLORS = {
 export const API = {
   baseUrl:
     (globalThis as { API_BASE_URL?: string }).API_BASE_URL ??
-    'https://world-remembers-fz89.onrender.com'
+    'https://world-remembers.onrender.com'
 }
 
 // Memory Stones: id must match shared/stones.ts STONES. Position is the
