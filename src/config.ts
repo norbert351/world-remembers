@@ -72,8 +72,13 @@ export const COLORS = {
 
 // World API endpoint. One place, used by the HTTP provider only.
 // Production: the stable Render backend for the deployed world.
+// Override at build time with API_BASE_URL (e.g. a local backend for
+// testing) — defaults to the stable hosted backend when unset, so the
+// deployed world keeps working with no env configured.
 export const API = {
-  baseUrl: 'https://world-remembers.onrender.com'
+  baseUrl:
+    (globalThis as { API_BASE_URL?: string }).API_BASE_URL ??
+    'https://world-remembers-fz89.onrender.com'
 }
 
 // Memory Stones: id must match shared/stones.ts STONES. Position is the

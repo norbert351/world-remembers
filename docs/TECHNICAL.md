@@ -118,7 +118,7 @@ One player = 1 point regardless of tap count; nothing client-injectable.
 
 ## API surface
 
-Base `https://world-remembers.onrender.com`.
+Base `https://world-remembers-fz89.onrender.com`.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
@@ -192,8 +192,9 @@ headless proof that scene logic is correct on a VM that cannot render.
 - **World**: `worldremembers.dcl.eth` → `https://play.decentraland.org/?realm=worldremembers.dcl.eth`. Verified live: `/settings`
   returns `access_type: unrestricted`, `single_player: false`, `show_in_places:
   true`.
-- **Backend**: Render service, `API.baseUrl = https://world-remembers.onrender.com`
-  baked into `src/config.ts`. `/health` live, `/world` returning real derived
+- **Backend**: Render service, `API.baseUrl = https://world-remembers-fz89.onrender.com`
+  default in `src/config.ts` (overridable at build time via `API_BASE_URL`).
+  `/health` live, `/world` returning real derived
   state (verified during the pre-submit audit).
 - The deployed scene bundle cannot be diffed from a cloud VM; redeploying new
   scene code requires the owner's `DCL_PRIVATE_KEY` (user action).

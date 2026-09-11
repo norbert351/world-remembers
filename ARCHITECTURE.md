@@ -15,7 +15,7 @@ flowchart LR
   B --> D[worldremembers.dcl.eth World content server]
 
   subgraph E["Persistence API (Render)"]
-    F[https://world-remembers.onrender.com]
+    F[https://world-remembers-fz89.onrender.com]
     F --> G[Express 5 app]
     G --> H[(Postgres / Neon)]
   end
